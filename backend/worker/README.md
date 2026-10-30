@@ -21,8 +21,9 @@ Create a dedicated service account in Google Cloud IAM and grant these roles:
 
 - Cloud Datastore User (`roles/datastore.user`) for Firestore REST access.
 - Firebase Cloud Messaging Service Editor (`roles/cloudmessaging.editor`) for push messages.
+- A custom IAM role with only `firebaseauth.users.update` for revoking TV refresh tokens.
 
-Create a JSON key for the service account. This is a private credential. Do not commit it to Git or share it in chat. Do not use an app's `google-services.json` instead.
+Enable the Cloud Firestore API (`firestore.googleapis.com`), Firebase Cloud Messaging API (`fcm.googleapis.com`), and Identity Toolkit API (`identitytoolkit.googleapis.com`). Create a JSON key for the service account. This is a private credential. Do not commit it to Git or share it in chat. Do not use an app's `google-services.json` instead.
 
 ## Deploy
 
