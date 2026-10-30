@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -236,11 +237,58 @@ class FamilyDashboard extends StatefulWidget {
 
 class _FamilyDashboardState extends State<FamilyDashboard> {
   late Future<String> _familyFuture;
+  StreamSubscription<String>? _tokenSubscription;
+  StreamSubscription<RemoteMessage>? _messageSubscription;
 
   @override
   void initState() {
     super.initState();
     _familyFuture = _loadFamily();
+    _registerPushNotifications();
+    _messageSubscription = FirebaseMessaging.onMessage.listen((message) {
+      if (!mounted) return;
+      final title = message.notification?.title ?? 'Family Control';
+      final body = message.notification?.body ?? 'Zmieniono stan telewizora.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$title: $body')),
+      );
+    });
+  }
+
+  Future<void> _registerPushNotifications() async {
+    final messaging = FirebaseMessaging.instance;
+    final settings = await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    if (settings.authorizationStatus == AuthorizationStatus.denied) return;
+
+    Future<void> saveToken(String token) async {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      await FirebaseFirestore.instance
+          .collection('users').doc(uid)
+          .collection('notificationTokens').doc(token)
+          .set({
+        'token': token,
+        'platform': Theme.of(context).platform.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+
+    final token = await messaging.getToken();
+    if (token != null) await saveToken(token);
+    _tokenSubscription = messaging.onTokenRefresh.listen((newToken) {
+      saveToken(newToken);
+    });
+  }
+
+  @override
+  void dispose() {
+    _tokenSubscription?.cancel();
+    _messageSubscription?.cancel();
+    super.dispose();
   }
 
   Future<String> _loadFamily() async {
