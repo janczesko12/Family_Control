@@ -75,13 +75,14 @@ Aktualne reguły pozwalają rodzicowi tworzyć polecenia i aktualizować wyłąc
 
 Worker musi mieć dostęp do Firestore i możliwość wysyłania powiadomień FCM.
 
-1. W Google Cloud Console → APIs & Services → Library upewnij się, że włączone są Cloud Firestore API (`firestore.googleapis.com`) oraz Firebase Cloud Messaging API (`fcm.googleapis.com`).
+1. W Google Cloud Console → APIs & Services → Library upewnij się, że włączone są Cloud Firestore API (`firestore.googleapis.com`), Firebase Cloud Messaging API (`fcm.googleapis.com`) oraz Identity Toolkit API (`identitytoolkit.googleapis.com`).
 2. Otwórz Google Cloud Console → IAM & Admin → Service Accounts.
 3. Utwórz osobne konto usługi, np. `family-control-worker`.
 4. Nadaj mu tylko te role:
    - Cloud Datastore User — `roles/datastore.user`.
    - Firebase Cloud Messaging Service Editor — `roles/cloudmessaging.editor`.
-5. Utwórz klucz JSON tego konta i zapisz go lokalnie.
+5. Utwórz własną rolę IAM zawierającą wyłącznie uprawnienie `firebaseauth.users.update` i przypisz ją temu kontu. Worker używa go do unieważniania tokenów odłączanego telewizora.
+6. Utwórz klucz JSON tego konta i zapisz go lokalnie.
 
 **Ten JSON jest sekretem serwera.** Nie wklejaj go do kodu, repozytorium Git ani czatu. Nie używaj w jego miejsce pliku `google-services.json` z aplikacji.
 
