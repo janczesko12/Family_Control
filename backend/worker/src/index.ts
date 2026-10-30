@@ -300,8 +300,11 @@ class FirestoreRest {
     return result.transaction;
   }
 
-  async commit(writes: Json[], transaction: string): Promise<void> {
-    await this.call(this.root + ":commit", "POST", { writes, transaction });
+  async commit(writes: Json[], transaction?: string): Promise<void> {
+    await this.call(this.root + ":commit", "POST", {
+      writes,
+      ...(transaction ? { transaction } : {}),
+    });
   }
 
   async rollback(transaction: string): Promise<void> {
@@ -417,7 +420,7 @@ async function createTvPairingSession(db: FirestoreRest, claims: FirebaseClaims)
       status: "pending",
       expiresAt: new Date(expiresAt),
     }, ["createdAt"]),
-  ], "");
+  ]);
   return { sessionId, code, tvUid: claims.sub, expiresAt };
 }
 
@@ -504,7 +507,7 @@ async function revokeAnonymousTv(db: FirestoreRest, claims: FirebaseClaims, body
       isLocked: true,
       lockReason: "revoked",
     }, ["revokedAt"]),
-  ], "");
+  ]);
   return { ok: true };
 }
 
