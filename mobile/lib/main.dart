@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -10,6 +9,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import 'backend_api.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -115,14 +115,12 @@ class _SignInPageState extends State<SignInPage> {
           password: _password.text,
         );
       }
-      await FirebaseFunctions.instance.httpsCallable('ensureFamily').call();
+      await BackendApi.call('ensureFamily');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_register ? 'Konto rodzica utworzone.' : 'Zalogowano.')),
       );
     } on FirebaseAuthException catch (error) {
-      _showError(error.message ?? error.code);
-    } on FirebaseFunctionsException catch (error) {
       _showError(error.message ?? error.code);
     } catch (error) {
       _showError(error.toString());
@@ -298,8 +296,7 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
   }
 
   Future<String> _loadFamily() async {
-    final result = await FirebaseFunctions.instance.httpsCallable('ensureFamily').call();
-    final data = Map<String, dynamic>.from(result.data as Map);
+    final data = await BackendApi.call('ensureFamily');
     final familyId = data['familyId'] as String?;
     if (familyId == null || familyId.isEmpty) {
       throw StateError('Firebase nie zwrócił identyfikatora rodziny.');
@@ -322,7 +319,7 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
           sessionId == null || code == null || tvUid == null) {
         throw const FormatException('Ten kod QR nie jest kodem Family Control TV.');
       }
-      await FirebaseFunctions.instance.httpsCallable('claimPairingSession').call({
+      await BackendApi.call('claimPairingSession', data: {
         'sessionId': sessionId,
         'code': code,
         'tvUid': tvUid,
@@ -333,8 +330,6 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Telewizor został dodany do rodziny.')),
       );
-    } on FirebaseFunctionsException catch (error) {
-      _error(error.message ?? error.code);
     } catch (error) {
       _error(error.toString());
     }
@@ -350,11 +345,11 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) throw StateError('Sesja logowania wygasła.');
       final commandId = _commandId();
-      await FirebaseFirestore.instance
+      final deviceRef = FirebaseFirestore.instance
           .collection('families').doc(familyId)
-          .collection('devices').doc(deviceId)
-          .collection('commands').doc(commandId)
-          .set({
+          .collection('devices').doc(deviceId);
+      final batch = FirebaseFirestore.instance.batch();
+      batch.set(deviceRef.collection('commands').doc(commandId), {
         'commandId': commandId,
         'type': type,
         'payload': payload,
@@ -362,6 +357,9 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
         'createdAt': FieldValue.serverTimestamp(),
         'status': 'pending',
       });
+      // Zastępuje trigger auditCommand: oba zapisy są atomowe.
+      batch.update(deviceRef, {'lastCommandAt': FieldValue.serverTimestamp()});
+      await batch.commit();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Polecenie wysłane. Czekam na potwierdzenie telewizora.')),

@@ -12,6 +12,8 @@
 
 # Node generated files
 **/node_modules/
+**/.wrangler/
+backend/worker/.dev.vars*
 backend/functions/lib/
 
 # Local Firebase configuration

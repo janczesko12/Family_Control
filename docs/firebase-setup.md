@@ -1,227 +1,151 @@
-# Podłączenie Firebase — Family Control TV
+# Konfiguracja Firebase i Cloudflare — Family Control TV
 
-Ten projekt korzysta z jednego projektu Firebase dla aplikacji rodzica (Flutter), aplikacji TV (Android TV/Kotlin), Firestore i Cloud Functions.
+Projekt używa jednego Firebase dla Authentication i Firestore. Operacje serwerowe wykonuje Cloudflare Worker. Nie wdrażamy już Firebase Cloud Functions, więc nie trzeba przełączać projektu na Blaze tylko z ich powodu.
 
 ## 0. Wymagane narzędzia
 
-Zainstaluj Flutter SDK, Android Studio / Android SDK, JDK 17, Node.js 20 LTS, npm, Firebase CLI i FlutterFire CLI.
+Zainstaluj Flutter SDK, Android Studio / Android SDK, JDK 17, Node.js 22, npm, Firebase CLI, FlutterFire CLI i Wrangler.
 
-W PowerShell sprawdź:
-~~~powershell
+Sprawdź w PowerShell:
+```powershell
 flutter --version
 dart --version
 java -version
 node --version
 npm --version
-~~~
+```
 
-Zainstaluj Firebase CLI i FlutterFire CLI:
-~~~powershell
-npm install -g firebase-tools
-dart pub global activate flutterfire_cli
+## 1. Projekt Firebase
+
+Używany projekt: `familycontrol-f4a9f`.
+
+Otwórz [Firebase Console](https://console.firebase.google.com/project/familycontrol-f4a9f/overview), a w katalogu głównym repozytorium wykonaj:
+```powershell
 firebase login
-~~~
-
-Jeśli flutterfire nie jest rozpoznawany, dodaj do PATH:
-%LOCALAPPDATA%\Pub\Cache\bin
-Następnie zamknij i otwórz PowerShell ponownie.
-
-## 1. Wybierz projekt Firebase
-
-Repozytorium wskazuje domyślnie projekt:
-familycontrol-f4a9f
-
-Otwórz https://console.firebase.google.com/
-
-- Jeśli masz już projekt o identyfikatorze familycontrol-f4a9f, użyj go.
-- Jeśli projekt nie istnieje lub nie masz do niego dostępu, utwórz nowy i zmień .firebaserc oraz polecenia poniżej na nowy identyfikator.
-- Włącz rozliczenia Blaze przed wdrożeniem Cloud Functions. Ustaw alert budżetowy.
-
-W katalogu głównym repozytorium:
-~~~powershell
 firebase use familycontrol-f4a9f
 firebase projects:list
-~~~
+```
 
-## 2. Włącz logowanie
+## 2. Authentication
 
-W Firebase Console:
-1. Otwórz Build → Authentication.
-2. Wybierz Get started.
-3. W zakładce Sign-in method włącz:
-   - Email/Password — dla aplikacji rodzica,
-   - Anonymous — dla aplikacji na telewizorze.
-4. Zapisz zmiany.
+W Firebase Console → Build → Authentication → Sign-in method włącz:
+- Email/Password — dla rodzica.
+- Anonymous — dla telewizora.
 
 Nie wyłączaj Anonymous Authentication — TV używa anonimowego konta do identyfikacji urządzenia.
 
-## 3. Utwórz bazę Firestore
+## 3. Firestore
 
-W Firebase Console:
-1. Otwórz Build → Firestore Database.
-2. Wybierz Create database.
-3. Wybierz tryb produkcyjny.
-4. Wybierz lokalizację europejską możliwie blisko użytkowników. Lokalizacji bazy nie można później łatwo zmienić; Cloud Functions najlepiej wdrażać w zgodnym regionie.
-5. Utwórz bazę.
+W Firebase Console → Build → Firestore Database utwórz bazę w trybie produkcyjnym, jeżeli jeszcze jej nie ma. Wybierz region europejski. Lokalizacji bazy nie można później łatwo zmienić.
 
-Nie twórz ręcznie kolekcji users, families ani pairingSessions. Funkcje tworzą je automatycznie.
+Nie twórz ręcznie kolekcji `users`, `families` ani `pairingSessions`. Worker utworzy wymagane dokumenty podczas pierwszego logowania i parowania.
 
-## 4. Dodaj aplikację Android TV do Firebase
+## 4. Aplikacje Firebase
 
-W Firebase Console:
-1. Otwórz ustawienia projektu → Project settings.
-2. W sekcji Your apps dodaj aplikację Android.
-3. Jako nazwę pakietu wpisz dokładnie: pl.familycontrol.tv
-4. Pobierz google-services.json.
-5. Umieść plik w: tv/app/google-services.json
+Dodaj dwie aplikacje Android w Firebase Console → Project settings → Your apps:
 
-Nie zmieniaj nazwy pliku.
+1. TV: pakiet `pl.familycontrol.tv`. Umieść pobrany plik w `tv/app/google-services.json`.
+2. Aplikacja rodzica: pakiet `com.familycontrol.app`. Umieść jej osobny plik w `mobile/android/app/google-services.json`.
 
-## 5. Dodaj osobną aplikację Android rodzica
+Nie kopiuj pliku aplikacji TV do aplikacji rodzica. Każda aplikacja ma własną konfigurację.
 
-To jest druga aplikacja Android w tym samym projekcie Firebase — ma inny identyfikator pakietu niż aplikacja TV.
-
-W Firebase Console → Project settings → Your apps:
-1. Dodaj kolejną aplikację Android.
-2. Wpisz identyfikator pakietu: com.familycontrol.app
-3. Pobierz jej własny plik google-services.json.
-4. Umieść go tutaj: mobile/android/app/google-services.json
-
-Nie kopiuj pliku TV do katalogu aplikacji rodzica. Każda rejestracja Android ma własny plik konfiguracyjny. Oba pliki są ignorowane przez Git.
-
-## 6. Skonfiguruj aplikację rodzica Flutter
-
-Identyfikator Android aplikacji rodzica to: com.familycontrol.app
+## 5. FlutterFire
 
 W PowerShell:
-~~~powershell
+```powershell
 cd mobile
 flutter pub get
-
-# Jeśli projekt nie ma jeszcze katalogu ios:
-flutter create --platforms=ios .
-
-# Zarejestruj Android i iOS w tym samym projekcie Firebase:
 flutterfire configure --project=familycontrol-f4a9f --platforms=android,ios
-~~~
+```
 
-Wybierz projekt familycontrol-f4a9f i potwierdź odpowiednie aplikacje.
-FlutterFire utworzy plik mobile/lib/firebase_options.dart.
+Wybierz projekt `familycontrol-f4a9f` i odpowiednie aplikacje. FlutterFire utworzy `mobile/lib/firebase_options.dart`.
 
-Ten plik jest lokalną konfiguracją generowaną dla Twojego projektu i jest ignorowany przez Git. Nie musisz ręcznie przepisywać kluczy.
+Dla iOS konfigurację kończysz na Macu w Xcode: dodaj GoogleService-Info.plist do Runner, włącz Push Notifications i skonfiguruj APNs w Firebase Console → Project settings → Cloud Messaging.
 
-Powiadomienia:
-- aplikacja poprosi o zgodę na powiadomienia i zapisze aktualny token FCM w users/{uid}/notificationTokens/{token}; token jest aktualizowany także po rotacji.
-- dla Androida 13+ manifest zawiera POST_NOTIFICATIONS; zgodę użytkownik potwierdza w systemowym oknie.
-- dla iOS otwórz mobile/ios/Runner.xcworkspace w Xcode na Macu, włącz Push Notifications w Signing & Capabilities i skonfiguruj APNs Authentication Key w Firebase Console → Project settings → Cloud Messaging.
-- dla iOS upewnij się, że GoogleService-Info.plist jest dodany do targetu Runner.
+## 6. Reguły i indeksy Firestore
 
-Dla iOS:
-- w ios/Runner/Info.plist dodaj opis użycia kamery dla skanera QR:
-~~~xml
-<key>NSCameraUsageDescription</key>
-<string>Kamera służy do skanowania kodu parowania telewizora.</string>
-~~~
-
-Budowanie iOS wymaga macOS oraz Xcode.
-
-## 7. Wdróż reguły i indeksy Firestore
-
-Wróć do katalogu głównego repozytorium:
-~~~powershell
-cd ..
+Z katalogu głównego repozytorium:
+```powershell
 firebase deploy --project familycontrol-f4a9f --only firestore:rules,firestore:indexes
-~~~
+```
 
-Reguły nie pozwalają użytkownikowi nadać sobie roli rodzica ani bezpośrednio zmienić limitu urządzenia. Rodzic zapisuje polecenie, a TV potwierdza wykonanie razem ze zmianą stanu.
+Aktualne reguły pozwalają rodzicowi tworzyć polecenia i aktualizować wyłącznie dozwolone pola. Profil rodzica, rodzina, sesje parowania i urządzenia są tworzone przez zaufany backend.
 
-## 8. Zbuduj i wdroż Cloud Functions
+## 7. Konto usługi Google dla Workera
 
-W katalogu głównym:
-~~~powershell
-cd backend/functions
-npm ci
-npm run build
-cd ../..
-firebase deploy --project familycontrol-f4a9f --only functions
-~~~
+Worker musi mieć dostęp do Firestore i możliwość wysyłania powiadomień FCM.
 
-Wdrożenie funkcji wymaga planu Blaze oraz aktywacji usług Google Cloud. Powinny pojawić się:
-- ensureFamily,
-- getServerTime,
-- createTvPairingSession,
-- claimPairingSession,
-- revokeAnonymousTv,
-- triggery audytu i powiadomień.
+1. W Google Cloud Console → APIs & Services → Library upewnij się, że włączone są Cloud Firestore API (`firestore.googleapis.com`), Firebase Cloud Messaging API (`fcm.googleapis.com`) oraz Identity Toolkit API (`identitytoolkit.googleapis.com`).
+2. Otwórz Google Cloud Console → IAM & Admin → Service Accounts.
+3. Utwórz osobne konto usługi, np. `family-control-worker`.
+4. Nadaj mu tylko te role:
+   - Cloud Datastore User — `roles/datastore.user`.
+   - Firebase Cloud Messaging Service Editor — `roles/cloudmessaging.editor`.
+5. Utwórz własną rolę IAM zawierającą wyłącznie uprawnienie `firebaseauth.users.update` i przypisz ją temu kontu. Worker używa go do unieważniania tokenów odłączanego telewizora.
+6. Utwórz klucz JSON tego konta i zapisz go lokalnie.
 
-Po wdrożeniu sprawdź Firebase Console → Functions.
+**Ten JSON jest sekretem serwera.** Nie wklejaj go do kodu, repozytorium Git ani czatu. Nie używaj w jego miejsce pliku `google-services.json` z aplikacji.
 
-## 9. Zbuduj APK
+## 8. Wdrożenie Cloudflare Worker
+
+Z katalogu głównego:
+```powershell
+cd backend/worker
+npm install
+npx wrangler login
+npm run typecheck
+npm run deploy
+```
+
+Wrangler pokaże adres, np. `https://family-control-api.twoj-login.workers.dev`. Skopiuj dokładny adres.
+
+Dodaj klucz konta usługi do Cloudflare jako zaszyfrowany sekret:
+```powershell
+npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
+```
+
+Gdy Wrangler poprosi o wartość, wklej całą zawartość lokalnego pliku JSON konta usługi. Nie wklejaj jej tutaj. Cloudflare zapisze ją jako Worker Secret.
+
+Po dodaniu sekretu Wrangler opublikuje nową wersję Workera. W razie rotacji klucza powtórz polecenie z nowym JSON-em i usuń stary klucz w Google Cloud.
+
+Na bezpłatnym planie Cloudflare Workers limit wynosi obecnie 100 000 żądań dziennie i 10 ms CPU na żądanie. Jeśli projekt przekroczy te limity, będzie trzeba zmienić plan Cloudflare. Nie zmienia to planu rozliczeniowego Firebase.
+
+## 9. Budowanie aplikacji z adresem Workera
+
+Zastąp poniższy adres dokładnym URL-em, który podał Wrangler. Użyj tego samego adresu w obu poleceniach.
+
+Aplikacja rodzica:
+```powershell
+cd ..\..\mobile
+flutter pub get
+flutter build apk --debug --dart-define=FAMILY_CONTROL_API_URL=https://family-control-api.twoj-login.workers.dev
+```
 
 Aplikacja TV:
-~~~powershell
-cd tv
-.\gradlew.bat assembleDebug
-~~~
-Wynik: tv/app/build/outputs/apk/debug/app-debug.apk
+```powershell
+cd ..\tv
+.\gradlew.bat assembleDebug -PFAMILY_CONTROL_API_URL=https://family-control-api.twoj-login.workers.dev
+```
 
-Aplikacja rodzica Android:
-~~~powershell
-cd ..
-cd mobile
-flutter pub get
-flutter build apk --debug
-cd ..
-~~~
-Wynik: mobile/build/app/outputs/flutter-apk/app-debug.apk
+Wyniki:
+- TV: `tv/app/build/outputs/apk/debug/app-debug.apk`.
+- Rodzic: `mobile/build/app/outputs/flutter-apk/app-debug.apk`.
 
-## 10. Instalacja i parowanie
+## 10. Powiadomienia
 
-Włącz debugowanie ADB na telewizorze:
-~~~powershell
-adb connect ADRES_IP_TV:5555
-adb install -r .\tv\app\build\outputs\apk\debug\app-debug.apk
-~~~
+Aplikacja rodzica zapisuje token FCM w `users/{uid}/notificationTokens/{token}`. Po faktycznej zmianie blokady TV wywołuje Worker, który weryfikuje powiązanie telewizora z rodziną i wysyła powiadomienie rodzicom.
 
-Zainstaluj aplikację rodzica na telefonie. Następnie:
-1. Otwórz Family Control TV na TCL.
-2. TV zaloguje się anonimowo i pokaże kod QR.
-3. Zarejestruj konto rodzica lub zaloguj się w aplikacji mobilnej.
-4. Zeskanuj kod QR przyciskiem Dodaj telewizor.
-5. Po zatwierdzeniu TV pojawi się na ekranie głównym telefonu.
-6. Przetestuj blokadę, odblokowanie z telefonu, dodanie czasu oraz PIN 6744.
+Powiadomienia są dodatkowe — blokowanie i odblokowywanie telewizora nie zależą od powodzenia FCM. Dla iOS potrzebny jest APNs Authentication Key skonfigurowany w Firebase Console.
 
-## 11. Tryb kiosk / Device Owner — ograniczenia TCL
+## 11. Parowanie i test
 
-Sama aplikacja może pokazać własny ekran blokady. Nie może zagwarantować blokady HOME, ustawień systemowych ani innych aplikacji.
+1. Zainstaluj nowy APK TV na TCL.
+2. Otwórz TV i poczekaj na kod QR.
+3. Zaloguj się lub utwórz konto rodzica.
+4. Zeskanuj kod QR w aplikacji rodzica.
+5. Sprawdź blokowanie, odblokowanie, dodawanie czasu, limit oraz PIN 6744.
+6. Sprawdź, czy na telefon przychodzi powiadomienie po zmianie stanu TV.
 
-Pełny Lock Task Mode wymaga, aby aplikacja była dopuszczona przez Device Owner. Na dedykowanym, testowym telewizorze po factory reset (przed dodaniem kont użytkowników) można spróbować:
-~~~powershell
-adb install -r .\tv\app\build\outputs\apk\debug\app-debug.apk
-adb shell dpm set-device-owner pl.familycontrol.tv/.FamilyDeviceAdminReceiver
-~~~
+## 12. Ograniczenie Device Owner / Lock Task
 
-To polecenie może zostać odrzucone przez firmware TCL. Provisioning może wymagać resetu fabrycznego. Nie wykonuj go na telewizorze, którego konfiguracji nie możesz stracić. Nie używaj rootowania ani exploitów.
-
-## 12. Najczęstsze problemy
-
-firebase: command not found
-Uruchom ponownie PowerShell po instalacji Firebase CLI.
-
-flutterfire: command not found
-Dodaj %LOCALAPPDATA%\Pub\Cache\bin do PATH.
-
-No Firebase App [DEFAULT] has been created
-Uruchom flutterfire configure w katalogu mobile i sprawdź, czy istnieje mobile/lib/firebase_options.dart.
-
-TV nie tworzy kodu parowania
-Sprawdź Anonymous Authentication, internet TV i wdrożenie Cloud Functions.
-
-PERMISSION_DENIED podczas parowania lub komend
-Wdróż aktualne reguły i funkcje. Sprawdź, czy konto rodzica ma users/{uid} z role=parent oraz familyId.
-
-FAILED_PRECONDITION przy query commands
-Wdróż firebase/firestore.indexes.json i poczekaj, aż indeks będzie gotowy.
-
-TV można wyjść przyciskiem HOME
-Firmware nie przyznał aplikacji Device Owner / Lock Task. Ekran aplikacji nie jest blokadą całego systemu.
+Bez Device Owner aplikacja może blokować swój własny ekran, ale nie może zagwarantować blokady HOME, ustawień systemowych ani innych aplikacji. Pełny Lock Task zależy od firmware TCL. Nie wykonuj factory reset ani polecenia `dpm set-device-owner` na telewizorze, którego konfiguracji nie możesz stracić.
