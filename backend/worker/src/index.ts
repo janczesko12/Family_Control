@@ -165,7 +165,6 @@ async function getGoogleAccessToken(env: Env): Promise<string> {
   const header = encodeBase64Url(encoder.encode(JSON.stringify({ alg: "RS256", typ: "JWT" })));
   const payload = encodeBase64Url(encoder.encode(JSON.stringify({
     iss: serviceAccount.client_email,
-    sub: serviceAccount.client_email,
     scope: FIRESTORE_SCOPE + " " + FCM_SCOPE,
     aud: GOOGLE_TOKEN_URL,
     iat: now,
