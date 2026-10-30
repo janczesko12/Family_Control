@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "family-control-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-30",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "FIREBASE_PROJECT_ID": "familycontrol-f4a9f"
+  },
+  "secrets": {
+    "required": ["FIREBASE_SERVICE_ACCOUNT_JSON"]
+  }
+}
