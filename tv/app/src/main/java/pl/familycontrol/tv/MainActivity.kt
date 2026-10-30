@@ -39,10 +39,12 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
-import com.google.firebase.functions.FirebaseFunctions
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -88,7 +90,6 @@ class MainActivity : ComponentActivity() {
 class TvViewModel(private val appContext: Context, private val activity: Activity) : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseFirestore.getInstance()
-    private val functions = FirebaseFunctions.getInstance()
     private val prefs = appContext.getSharedPreferences("family_control_tv", Context.MODE_PRIVATE)
     private val pin = PinVerifier(prefs)
     private val _state = MutableStateFlow(
@@ -127,27 +128,68 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
     }
 
     private fun syncServerClock(onComplete: () -> Unit) {
-        functions.getHttpsCallable("getServerTime").call()
-            .addOnSuccessListener { result ->
-                val data = result.data as? Map<*, *>
-                val serverMillis = (data?.get("serverTimeMillis") as? Number)?.toLong() ?: 0L
-                if (serverMillis > 0L) {
-                    serverAnchorMillis = serverMillis
-                    serverAnchorWallMillis = System.currentTimeMillis()
-                    serverAnchorElapsed = SystemClock.elapsedRealtime()
-                    serverOffsetMillis = serverMillis - serverAnchorWallMillis
-                    prefs.edit()
-                        .putLong("serverAnchorMillis", serverAnchorMillis)
-                        .putLong("serverAnchorWallMillis", serverAnchorWallMillis)
-                        .putLong("serverTimeOffsetMillis", serverOffsetMillis)
-                        .apply()
+        workerPost("server-time", JSONObject()) { result, _ ->
+            val serverMillis = result?.optLong("serverTimeMillis", 0L) ?: 0L
+            if (serverMillis > 0L) {
+                serverAnchorMillis = serverMillis
+                serverAnchorWallMillis = System.currentTimeMillis()
+                serverAnchorElapsed = SystemClock.elapsedRealtime()
+                serverOffsetMillis = serverMillis - serverAnchorWallMillis
+                prefs.edit()
+                    .putLong("serverAnchorMillis", serverAnchorMillis)
+                    .putLong("serverAnchorWallMillis", serverAnchorWallMillis)
+                    .putLong("serverTimeOffsetMillis", serverOffsetMillis)
+                    .apply()
+            }
+            onComplete()
+        }
+    }
+
+    private fun workerPost(
+        path: String,
+        payload: JSONObject,
+        onComplete: (JSONObject?, String?) -> Unit = { _, _ -> },
+    ) {
+        val baseUrl = BuildConfig.WORKER_API_URL
+        if (baseUrl.isBlank()) {
+            onComplete(null, "Brak adresu Cloudflare Worker. Zbuduj TV z parametrem -PworkerApiUrl=...")
+            return
+        }
+        val user = auth.currentUser
+        if (user == null) {
+            onComplete(null, "Telewizor nie jest zalogowany w Firebase.")
+            return
+        }
+        user.getIdToken(false)
+            .addOnSuccessListener { tokenResult ->
+                val idToken = tokenResult.token
+                if (idToken.isNullOrBlank()) {
+                    onComplete(null, "Firebase nie zwrócił tokenu urządzenia.")
+                    return@addOnSuccessListener
                 }
-                onComplete()
+                viewModelScope.launch {
+                    try {
+                        val response = withContext(Dispatchers.IO) {
+                            WorkerApi.post(baseUrl, path, idToken, payload)
+                        }
+                        onComplete(response, null)
+                    } catch (error: Exception) {
+                        onComplete(null, error.message ?: "Błąd połączenia z backendem.")
+                    }
+                }
             }
-            .addOnFailureListener {
-                // Offline startup uses the last persisted server-time anchor.
-                onComplete()
-            }
+            .addOnFailureListener { onComplete(null, it.message ?: "Nie udało się pobrać tokenu Firebase.") }
+    }
+
+    private fun reportDeviceState() {
+        val familyId = _state.value.familyId ?: return
+        val deviceId = _state.value.deviceId ?: return
+        workerPost(
+            "tv/device-state",
+            JSONObject().put("familyId", familyId).put("deviceId", deviceId),
+        ) { _, error ->
+            if (error != null) android.util.Log.w("FamilyControl", "State notification failed: $error")
+        }
     }
 
     private fun updateServerAnchor(serverMillis: Long) {
@@ -163,22 +205,23 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
     }
 
     private fun createPairingSession() {
-        functions.getHttpsCallable("createTvPairingSession").call()
-            .addOnSuccessListener { result ->
-                val data = result.data as? Map<*, *> ?: return@addOnSuccessListener
-                val id = data["sessionId"] as? String ?: return@addOnSuccessListener
-                val code = data["code"] as? String ?: return@addOnSuccessListener
-                prefs.edit().putString("pairingSessionId", id).apply()
-                val expiresAt = (data["expiresAt"] as? Number)?.toLong() ?: 0L
-                _state.value = _state.value.copy(
-                    pairingSessionId = id,
-                    pairingCode = code,
-                    pairingExpiresAt = expiresAt,
-                    message = null,
-                )
-                listenToSession(id)
+        workerPost("tv/pairing-session", JSONObject()) { data, error ->
+            if (error != null || data == null) {
+                message("Nie można utworzyć kodu parowania: ${error ?: "brak odpowiedzi"}")
+                return@workerPost
             }
-            .addOnFailureListener { message("Nie można utworzyć kodu parowania: ${it.message}") }
+            val id = data.optString("sessionId").takeIf { it.isNotBlank() } ?: return@workerPost
+            val code = data.optString("code").takeIf { it.isNotBlank() } ?: return@workerPost
+            prefs.edit().putString("pairingSessionId", id).apply()
+            val expiresAt = data.optLong("expiresAt", 0L)
+            _state.value = _state.value.copy(
+                pairingSessionId = id,
+                pairingCode = code,
+                pairingExpiresAt = expiresAt,
+                message = null,
+            )
+            listenToSession(id)
+        }
     }
 
     private fun listenToSession(sessionId: String) {
@@ -349,6 +392,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                 )
                 persistState()
                 KioskController(activity).apply(result.first)
+                reportDeviceState()
                 db.collection("families").document(familyId).collection("devices").document(deviceId)
                     .collection("history").add(mapOf(
                         "type" to if (result.first) "lock" else "unlock",
@@ -378,7 +422,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                 "lastSyncAt", FieldValue.serverTimestamp(),
                 "lastSeenAt", FieldValue.serverTimestamp(),
                 "lockReason", "pin",
-            )
+            ).addOnSuccessListener { reportDeviceState() }
             ref.collection("history").add(mapOf(
                 "type" to "unlock",
                 "reason" to "pin",
@@ -423,7 +467,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                         "lockReason", "time_exhausted",
                         "lastSyncAt", FieldValue.serverTimestamp(),
                         "lastSeenAt", FieldValue.serverTimestamp(),
-                    )
+                    ).addOnSuccessListener { reportDeviceState() }
                     ref.collection("history").add(mapOf(
                         "type" to "lock",
                         "reason" to "time_exhausted",
