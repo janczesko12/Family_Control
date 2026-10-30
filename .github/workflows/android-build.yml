@@ -88,4 +88,4 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Build TV APK
         working-directory: tv
-        run: bash ./gradlew assembleDebug -PFAMILY_CONTROL_API_URL=https://ci-placeholder.workers.dev
+        run: bash ./gradlew assembleDebug -PFAMILY_CONTROL_API_URL=https://ci-placeholder.workers.dev --stacktrace
