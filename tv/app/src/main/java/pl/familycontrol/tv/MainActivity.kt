@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
         )
         viewModel = ViewModelProvider(this, TvViewModel.Factory(applicationContext, this))
-            [TvViewModel::class.java]
+            .get(TvViewModel::class.java)
         setContent { FamilyControlTv(viewModel) }
     }
 
@@ -108,7 +108,10 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
     private var commandListener: ListenerRegistration? = null
     private var sessionListener: ListenerRegistration? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var serverOffsetMillis = prefs.getLong("serverTimeOffsetMillis", 0)
+    private var serverAnchorMillis = prefs.getLong("serverAnchorMillis", 0L)
+    private var serverAnchorWallMillis = prefs.getLong("serverAnchorWallMillis", 0L)
+    private var serverAnchorElapsed = SystemClock.elapsedRealtime()
+    private var serverOffsetMillis = prefs.getLong("serverTimeOffsetMillis", 0L)
     private var lastHeartbeatElapsed = SystemClock.elapsedRealtime()
 
     init {
@@ -118,8 +121,8 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
             if (familyId != null && deviceId != null) listenToDevice(familyId, deviceId)
             else createPairingSession()
         }
-        if (auth.currentUser != null) start()
-        else auth.signInAnonymously().addOnSuccessListener { start() }
+        if (auth.currentUser != null) syncServerClock { start() }
+        else auth.signInAnonymously().addOnSuccessListener { syncServerClock { start() } }
             .addOnFailureListener { message("Logowanie TV: ${it.message}") }
 
         viewModelScope.launch {
