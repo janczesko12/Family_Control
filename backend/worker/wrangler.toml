@@ -1,0 +1,8 @@
+name = "family-control-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-30"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "familycontrol-f4a9f"
+

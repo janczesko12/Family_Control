@@ -136,7 +136,11 @@ service cloud.firestore {
         allow delete: if isParent(familyId);
         allow update: if (
           isParent(familyId)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'lastCommandAt'])
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastCommandAt'])
+            || request.resource.data.lastCommandAt == request.time
+          )
         ) || (
           isTv(familyId, deviceId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([

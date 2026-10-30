@@ -5,10 +5,20 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+val familyControlApiUrl = (project.findProperty("FAMILY_CONTROL_API_URL") as String?)
+    ?: "https://family-control-api.YOUR-SUBDOMAIN.workers.dev"
+
 android { namespace = "pl.familycontrol.tv"; compileSdk = 35
-    defaultConfig { applicationId = "pl.familycontrol.tv"; minSdk = 23; targetSdk = 35; versionCode = 1; versionName = "0.1.0" }
+    defaultConfig {
+        applicationId = "pl.familycontrol.tv"
+        minSdk = 23
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.1.0"
+        buildConfigField("String", "FAMILY_CONTROL_API_URL", "\"" + familyControlApiUrl + "\"")
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 }
 
 kotlin { jvmToolchain(17) }
@@ -26,6 +36,5 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-functions-ktx")
     implementation("com.google.zxing:core:3.5.3")
 }
