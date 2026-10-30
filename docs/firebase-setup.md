@@ -132,6 +132,7 @@ firebase deploy --project familycontrol-f4a9f --only functions
 
 Wdrożenie funkcji wymaga planu Blaze oraz aktywacji usług Google Cloud. Powinny pojawić się:
 - ensureFamily,
+- getServerTime,
 - createTvPairingSession,
 - claimPairingSession,
 - revokeAnonymousTv,

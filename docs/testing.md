@@ -25,6 +25,7 @@
 - Rodzic dodaje czas w trakcie sesji.
 - Polecenie ma commandId i jest rozliczone najwyżej raz.
 - Zmiana remainingSeconds na większą wartość bez zatwierdzonego polecenia zostaje odrzucona.
+- TV pobiera czas z getServerTime, a licznik używa zegara monotonicznego podczas działania procesu.
 - Timer odtwarza stan na podstawie sessionEndServerMillis po ponownym uruchomieniu aplikacji.
 - Wyłączenie internetu w trakcie sesji nie resetuje zapisanej daty końca; po powrocie sieci TV synchronizuje status.
 
