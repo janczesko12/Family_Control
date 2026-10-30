@@ -40,7 +40,7 @@ class WorkerApi {
         if (decoded is Map<String, dynamic>) data = decoded;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError(data['error']?.toString() ?? 'Błąd backendu HTTP \${response.statusCode}.');
+        throw StateError(data['error']?.toString() ?? 'Błąd backendu HTTP ${response.statusCode}.');
       }
       return data;
     } finally {
