@@ -225,12 +225,19 @@ async function commit(env: Env, writes: Record<string, unknown>[]): Promise<void
   }
 }
 
-function updateWrite(env: Env, path: string, fields: Record<string, unknown>, updateTime?: string): Record<string, unknown> {
+function updateWrite(
+  env: Env,
+  path: string,
+  fields: Record<string, unknown>,
+  updateTime?: string,
+  requireExists = false,
+): Record<string, unknown> {
   const write: Record<string, unknown> = {
     update: { name: documentName(env, path), fields: encodeFields(fields) },
     updateMask: { fieldPaths: Object.keys(fields) },
   };
   if (updateTime) write.currentDocument = { updateTime };
+  else if (requireExists) write.currentDocument = { exists: true };
   return write;
 }
 
@@ -458,22 +465,43 @@ async function sendCommand(request: Request, env: Env, body: Record<string, any>
       createdAt: now,
       status: "pending",
     }),
-    updateWrite(env, devicePath, { lastCommandAt: now }, device.updateTime),
+    updateWrite(env, devicePath, { lastCommandAt: now }, undefined, true),
   ]);
   return json({ ok: true, commandId });
 }
 
 async function notifyParentsForDevice(env: Env, familyId: string, deviceId: string): Promise<void> {
   const devicePath = "families/" + familyId + "/devices/" + deviceId;
-  const device = await getDocument(env, devicePath);
-  if (!device || typeof device.data.isLocked !== "boolean") return;
-  const locked = device.data.isLocked as boolean;
-  if (device.data.lastNotifiedIsLocked === locked) return;
+  let locked = true;
+  let lockReason = "";
+  let changed = false;
 
-  await commit(env, [updateWrite(env, devicePath, {
-    lastNotifiedIsLocked: locked,
-    lastStateNotificationAt: new Date(),
-  }, device.updateTime)]);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const device = await getDocument(env, devicePath);
+    if (!device || typeof device.data.isLocked !== "boolean") return;
+    locked = device.data.isLocked as boolean;
+    lockReason = String(device.data.lockReason ?? "");
+    if (typeof device.data.lastNotifiedIsLocked !== "boolean") {
+      // Existing TV installations get a notification baseline during migration.
+      await commit(env, [updateWrite(env, devicePath, {
+        lastNotifiedIsLocked: locked,
+        lastStateNotificationAt: new Date(),
+      }, device.updateTime)]);
+      return;
+    }
+    if (device.data.lastNotifiedIsLocked === locked) return;
+    try {
+      await commit(env, [updateWrite(env, devicePath, {
+        lastNotifiedIsLocked: locked,
+        lastStateNotificationAt: new Date(),
+      }, device.updateTime)]);
+      changed = true;
+      break;
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 409 || attempt === 2) throw error;
+    }
+  }
+  if (!changed) return;
 
   const family = await getDocument(env, "families/" + familyId);
   const parentIds = Array.isArray(family?.data.parentIds) ? family?.data.parentIds as string[] : [];
@@ -489,7 +517,7 @@ async function notifyParentsForDevice(env: Env, familyId: string, deviceId: stri
 
   const accessToken = await getServiceAccessToken(env);
   const title = locked ? "Telewizor zablokowany" : "Telewizor odblokowany";
-  const body = device.data.lockReason === "time_exhausted"
+  const body = lockReason === "time_exhausted"
     ? "Limit czasu został wykorzystany."
     : "Stan telewizora został zmieniony.";
   const endpoint = "https://fcm.googleapis.com/v1/projects/" + env.FIREBASE_PROJECT_ID + "/messages:send";
@@ -531,13 +559,27 @@ async function revokeTv(request: Request, env: Env, body: Record<string, any>): 
   const deviceId = requireString(body.deviceId, "deviceId");
   if (requestedFamily !== familyId) throw new ApiError(403, "Urządzenie nie należy do tej rodziny.");
   const path = "families/" + familyId + "/devices/" + deviceId;
-  const device = await getDocument(env, path);
-  if (!device) throw new ApiError(404, "Nie znaleziono urządzenia.");
-  await commit(env, [updateWrite(env, path, {
-    revokedAt: new Date(),
-    isLocked: true,
-    lockReason: "revoked",
-  }, device.updateTime)]);
+  let revoked = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const device = await getDocument(env, path);
+    if (!device) throw new ApiError(404, "Nie znaleziono urządzenia.");
+    if (device.data.revokedAt) {
+      revoked = true;
+      break;
+    }
+    try {
+      await commit(env, [updateWrite(env, path, {
+        revokedAt: new Date(),
+        isLocked: true,
+        lockReason: "revoked",
+      }, device.updateTime)]);
+      revoked = true;
+      break;
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 409 || attempt === 2) throw error;
+    }
+  }
+  if (!revoked) throw new ApiError(409, "Nie udało się odłączyć telewizora. Spróbuj ponownie.");
   await notifyParentsForDevice(env, familyId, deviceId);
   return json({ ok: true });
 }
