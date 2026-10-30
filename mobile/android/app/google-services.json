@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "705217609582",
+    "project_id": "familycontrol-f4a9f",
+    "storage_bucket": "familycontrol-f4a9f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:705217609582:android:49e1218d4b852a63aa4b7f",
+        "android_client_info": {
+          "package_name": "com.familycontrol.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDTjKH1-XdIFZXVPbTNIrMJdKq-4kj9dK0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:705217609582:android:1749a62ef4d05807aa4b7f",
+        "android_client_info": {
+          "package_name": "pl.familycontrol.tv"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDTjKH1-XdIFZXVPbTNIrMJdKq-4kj9dK0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
