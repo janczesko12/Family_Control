@@ -77,7 +77,19 @@ W Firebase Console:
 
 Nie zmieniaj nazwy pliku.
 
-## 5. Skonfiguruj aplikację rodzica Flutter
+## 5. Dodaj osobną aplikację Android rodzica
+
+To jest druga aplikacja Android w tym samym projekcie Firebase — ma inny identyfikator pakietu niż aplikacja TV.
+
+W Firebase Console → Project settings → Your apps:
+1. Dodaj kolejną aplikację Android.
+2. Wpisz identyfikator pakietu: com.familycontrol.app
+3. Pobierz jej własny plik google-services.json.
+4. Umieść go tutaj: mobile/android/app/google-services.json
+
+Nie kopiuj pliku TV do katalogu aplikacji rodzica. Każda rejestracja Android ma własny plik konfiguracyjny. Oba pliki są ignorowane przez Git.
+
+## 6. Skonfiguruj aplikację rodzica Flutter
 
 Identyfikator Android aplikacji rodzica to: com.familycontrol.app
 
@@ -113,7 +125,7 @@ Dla iOS:
 
 Budowanie iOS wymaga macOS oraz Xcode.
 
-## 6. Wdróż reguły i indeksy Firestore
+## 7. Wdróż reguły i indeksy Firestore
 
 Wróć do katalogu głównego repozytorium:
 ~~~powershell
@@ -123,7 +135,7 @@ firebase deploy --project familycontrol-f4a9f --only firestore:rules,firestore:i
 
 Reguły nie pozwalają użytkownikowi nadać sobie roli rodzica ani bezpośrednio zmienić limitu urządzenia. Rodzic zapisuje polecenie, a TV potwierdza wykonanie razem ze zmianą stanu.
 
-## 7. Zbuduj i wdroż Cloud Functions
+## 8. Zbuduj i wdroż Cloud Functions
 
 W katalogu głównym:
 ~~~powershell
@@ -144,7 +156,7 @@ Wdrożenie funkcji wymaga planu Blaze oraz aktywacji usług Google Cloud. Powinn
 
 Po wdrożeniu sprawdź Firebase Console → Functions.
 
-## 8. Zbuduj APK
+## 9. Zbuduj APK
 
 Aplikacja TV:
 ~~~powershell
@@ -163,7 +175,7 @@ cd ..
 ~~~
 Wynik: mobile/build/app/outputs/flutter-apk/app-debug.apk
 
-## 9. Instalacja i parowanie
+## 10. Instalacja i parowanie
 
 Włącz debugowanie ADB na telewizorze:
 ~~~powershell
@@ -179,7 +191,7 @@ Zainstaluj aplikację rodzica na telefonie. Następnie:
 5. Po zatwierdzeniu TV pojawi się na ekranie głównym telefonu.
 6. Przetestuj blokadę, odblokowanie z telefonu, dodanie czasu oraz PIN 6744.
 
-## 10. Tryb kiosk / Device Owner — ograniczenia TCL
+## 11. Tryb kiosk / Device Owner — ograniczenia TCL
 
 Sama aplikacja może pokazać własny ekran blokady. Nie może zagwarantować blokady HOME, ustawień systemowych ani innych aplikacji.
 
@@ -191,7 +203,7 @@ adb shell dpm set-device-owner pl.familycontrol.tv/.FamilyDeviceAdminReceiver
 
 To polecenie może zostać odrzucone przez firmware TCL. Provisioning może wymagać resetu fabrycznego. Nie wykonuj go na telewizorze, którego konfiguracji nie możesz stracić. Nie używaj rootowania ani exploitów.
 
-## 11. Najczęstsze problemy
+## 12. Najczęstsze problemy
 
 firebase: command not found
 Uruchom ponownie PowerShell po instalacji Firebase CLI.
