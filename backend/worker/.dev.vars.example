@@ -1,0 +1,3 @@
+# Copy this file to .dev.vars for local Wrangler development.
+# Never commit the real .dev.vars file.
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"familycontrol-f4a9f","private_key_id":"REPLACE_ME","private_key":"-----BEGIN PRIVATE KEY-----\nREPLACE_ME\n-----END PRIVATE KEY-----\n","client_email":"REPLACE_ME@familycontrol-f4a9f.iam.gserviceaccount.com","client_id":"REPLACE_ME"}
