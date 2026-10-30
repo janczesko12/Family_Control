@@ -1,0 +1,17 @@
+{
+  "name": "family-control-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "wrangler": "^4.0.0"
+  }
+}
