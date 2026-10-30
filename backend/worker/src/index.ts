@@ -34,6 +34,7 @@ const FIREBASE_JWKS_URL =
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const FIRESTORE_SCOPE = "https://www.googleapis.com/auth/datastore";
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
+const IDENTITY_TOOLKIT_SCOPE = "https://www.googleapis.com/auth/identitytoolkit";
 
 function jsonResponse(data: Json, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -171,7 +172,7 @@ async function getGoogleAccessToken(env: Env): Promise<string> {
   const header = encodeBase64Url(encoder.encode(JSON.stringify({ alg: "RS256", typ: "JWT" })));
   const payload = encodeBase64Url(encoder.encode(JSON.stringify({
     iss: serviceAccount.client_email,
-    scope: FIRESTORE_SCOPE + " " + FCM_SCOPE,
+    scope: FIRESTORE_SCOPE + " " + FCM_SCOPE + " " + IDENTITY_TOOLKIT_SCOPE,
     aud: GOOGLE_TOKEN_URL,
     iat: now,
     exp: now + 3600,
@@ -495,7 +496,30 @@ async function claimPairingSession(db: FirestoreRest, claims: FirebaseClaims, bo
   }
 }
 
-async function revokeAnonymousTv(db: FirestoreRest, claims: FirebaseClaims, body: Json): Promise<Json> {
+async function revokeFirebaseRefreshTokens(env: Env, tvUid: string): Promise<void> {
+  const accessToken = await getGoogleAccessToken(env);
+  const response = await fetch(
+    "https://identitytoolkit.googleapis.com/v1/projects/" +
+      env.FIREBASE_PROJECT_ID + "/accounts:update",
+    {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + accessToken,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        localId: tvUid,
+        validSince: String(Math.floor(Date.now() / 1000)),
+        returnSecureToken: false,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new ApiError(502, "auth_revoke_failed", "Nie udało się unieważnić sesji logowania telewizora.");
+  }
+}
+
+async function revokeAnonymousTv(db: FirestoreRest, env: Env, claims: FirebaseClaims, body: Json): Promise<Json> {
   requireParent(claims);
   const familyId = typeof body.familyId === "string" ? body.familyId.trim() : "";
   const deviceId = typeof body.deviceId === "string" ? body.deviceId.trim() : "";
@@ -513,7 +537,17 @@ async function revokeAnonymousTv(db: FirestoreRest, claims: FirebaseClaims, body
       lockReason: "revoked",
     }, ["revokedAt"]),
   ]);
-  return { ok: true };
+
+  let authTokensRevoked = false;
+  if (typeof device.fields.tvUid === "string" && device.fields.tvUid.length > 0) {
+    try {
+      await revokeFirebaseRefreshTokens(env, device.fields.tvUid);
+      authTokensRevoked = true;
+    } catch {
+      // revokedAt remains authoritative even if Firebase Auth revocation is unavailable.
+    }
+  }
+  return { ok: true, authTokensRevoked };
 }
 
 async function notifyParents(
@@ -625,7 +659,7 @@ async function route(request: Request, env: Env): Promise<Response> {
         data = await claimPairingSession(db, claims, body);
         break;
       case "/revokeAnonymousTv":
-        data = await revokeAnonymousTv(db, claims, body);
+        data = await revokeAnonymousTv(db, env, claims, body);
         break;
       case "/notifyParents":
         data = await notifyParents(db, env, claims, body);
