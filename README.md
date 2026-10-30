@@ -25,7 +25,7 @@ Pełna instrukcja: docs/firebase-setup.md.
 5. W mobile uruchom flutterfire configure --project=familycontrol-f4a9f --platforms=android,ios.
 6. Z katalogu głównego wdróż reguły, indeksy i funkcje:
    firebase deploy --project familycontrol-f4a9f --only firestore:rules,firestore:indexes,functions
-7. Zbuduj TV przez cd tv; .\gradlew.bat assembleDebug, a telefon przez cd mobile; flutter build apk --debug.
+7. Zbuduj TV: cd tv; .\gradlew.bat assembleDebug; cd .. . Zbuduj aplikację rodzica: cd mobile; flutter build apk --debug; cd .. .
 
 Cloud Functions wymagają planu Blaze. Ustaw alert budżetowy w Google Cloud/Firebase.
 

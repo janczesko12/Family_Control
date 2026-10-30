@@ -150,9 +150,11 @@ Wynik: tv/app/build/outputs/apk/debug/app-debug.apk
 
 Aplikacja rodzica Android:
 ~~~powershell
+cd ..
 cd mobile
 flutter pub get
 flutter build apk --debug
+cd ..
 ~~~
 Wynik: mobile/build/app/outputs/flutter-apk/app-debug.apk
 
@@ -178,7 +180,7 @@ Sama aplikacja może pokazać własny ekran blokady. Nie może zagwarantować bl
 
 Pełny Lock Task Mode wymaga, aby aplikacja była dopuszczona przez Device Owner. Na dedykowanym, testowym telewizorze po factory reset (przed dodaniem kont użytkowników) można spróbować:
 ~~~powershell
-adb install -r .\app-debug.apk
+adb install -r .\tv\app\build\outputs\apk\debug\app-debug.apk
 adb shell dpm set-device-owner pl.familycontrol.tv/.FamilyDeviceAdminReceiver
 ~~~
 
