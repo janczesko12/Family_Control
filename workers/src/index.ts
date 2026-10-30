@@ -55,6 +55,13 @@ function decodeBase64(input: string): Uint8Array {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+}
+
 function encodeValue(value: unknown): Record<string, unknown> {
   if (value === null || value === undefined) return { nullValue: null };
   if (value instanceof Date) return { timestampValue: value.toISOString() };
@@ -137,7 +144,7 @@ async function getServiceAccessToken(env: Env): Promise<string> {
     .replace(/\s/g, "");
   const privateKey = await crypto.subtle.importKey(
     "pkcs8",
-    decodeBase64(pem),
+    toArrayBuffer(decodeBase64(pem)),
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"],
@@ -145,7 +152,7 @@ async function getServiceAccessToken(env: Env): Promise<string> {
   const signature = new Uint8Array(await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     privateKey,
-    new TextEncoder().encode(unsigned),
+    toArrayBuffer(new TextEncoder().encode(unsigned)),
   ));
   const assertion = unsigned + "." + base64Url(signature);
 
@@ -296,7 +303,7 @@ function randomId(): string {
 }
 
 async function sha256(value: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", toArrayBuffer(new TextEncoder().encode(value))));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
