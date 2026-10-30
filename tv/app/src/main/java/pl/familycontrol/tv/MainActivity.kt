@@ -124,6 +124,42 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
         }
     }
 
+    private fun syncServerClock(onComplete: () -> Unit) {
+        functions.getHttpsCallable("getServerTime").call()
+            .addOnSuccessListener { result ->
+                val data = result.data as? Map<*, *>
+                val serverMillis = (data?.get("serverTimeMillis") as? Number)?.toLong() ?: 0L
+                if (serverMillis > 0L) {
+                    serverAnchorMillis = serverMillis
+                    serverAnchorWallMillis = System.currentTimeMillis()
+                    serverAnchorElapsed = SystemClock.elapsedRealtime()
+                    serverOffsetMillis = serverMillis - serverAnchorWallMillis
+                    prefs.edit()
+                        .putLong("serverAnchorMillis", serverAnchorMillis)
+                        .putLong("serverAnchorWallMillis", serverAnchorWallMillis)
+                        .putLong("serverTimeOffsetMillis", serverOffsetMillis)
+                        .apply()
+                }
+                onComplete()
+            }
+            .addOnFailureListener {
+                // Offline startup uses the last persisted server-time anchor.
+                onComplete()
+            }
+    }
+
+    private fun updateServerAnchor(serverMillis: Long) {
+        serverAnchorMillis = serverMillis
+        serverAnchorWallMillis = System.currentTimeMillis()
+        serverAnchorElapsed = SystemClock.elapsedRealtime()
+        serverOffsetMillis = serverMillis - serverAnchorWallMillis
+        prefs.edit()
+            .putLong("serverAnchorMillis", serverAnchorMillis)
+            .putLong("serverAnchorWallMillis", serverAnchorWallMillis)
+            .putLong("serverTimeOffsetMillis", serverOffsetMillis)
+            .apply()
+    }
+
     private fun createPairingSession() {
         functions.getHttpsCallable("createTvPairingSession").call()
             .addOnSuccessListener { result ->
@@ -176,9 +212,11 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                 return@addSnapshotListener
             }
 
-            snapshot.getTimestamp("lastSyncAt")?.let {
-                serverOffsetMillis = it.toDate().time - System.currentTimeMillis()
-                prefs.edit().putLong("serverTimeOffsetMillis", serverOffsetMillis).apply()
+            snapshot.getTimestamp("lastSyncAt")?.toDate()?.time?.let { lastServerSync ->
+                // A stale cached timestamp must not move the server clock backwards.
+                if (kotlin.math.abs(lastServerSync - serverNowMillis()) <= 120_000L) {
+                    updateServerAnchor(lastServerSync)
+                }
             }
             val end = snapshot.getLong("sessionEndServerMillis") ?: 0L
             val lastSync = snapshot.getTimestamp("lastSyncAt")?.toDate()?.time ?: 0L
@@ -389,7 +427,13 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
         }
     }
 
-    private fun serverNowMillis() = System.currentTimeMillis() + serverOffsetMillis
+    private fun serverNowMillis(): Long {
+        return if (serverAnchorMillis > 0L) {
+            serverAnchorMillis + (SystemClock.elapsedRealtime() - serverAnchorElapsed)
+        } else {
+            System.currentTimeMillis() + serverOffsetMillis
+        }
+    }
 
     private fun persistState() {
         val s = _state.value

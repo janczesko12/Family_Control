@@ -59,6 +59,12 @@ export const ensureFamily = onCall(async (request) => {
   });
 });
 
+/** Zwraca czas serwera, aby TV nie ufał zegarowi ściennemu urządzenia. */
+export const getServerTime = onCall(async (request) => {
+  requireUid(request);
+  return { serverTimeMillis: Date.now() };
+});
+
 /** Wywoływane przez TV zalogowany anonimowo. Kod parowania jest haszowany w bazie. */
 export const createTvPairingSession = onCall(async (request) => {
   const tvUid = request.auth?.uid;
