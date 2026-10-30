@@ -115,8 +115,8 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
             if (familyId != null && deviceId != null) listenToDevice(familyId, deviceId)
             else createPairingSession()
         }
-        if (auth.currentUser != null) start()
-        else auth.signInAnonymously().addOnSuccessListener { start() }
+        if (auth.currentUser != null) syncServerClock { start() }
+        else auth.signInAnonymously().addOnSuccessListener { syncServerClock { start() } }
             .addOnFailureListener { message("Logowanie TV: ${it.message}") }
 
         viewModelScope.launch {
