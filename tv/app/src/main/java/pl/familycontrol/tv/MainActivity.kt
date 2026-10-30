@@ -108,6 +108,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
     private var commandListener: ListenerRegistration? = null
     private var sessionListener: ListenerRegistration? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    // Keep the previous server anchor as an offline fallback; refresh it before starting TV state listeners.
     private var serverAnchorMillis = prefs.getLong("serverAnchorMillis", 0L)
     private var serverAnchorWallMillis = prefs.getLong("serverAnchorWallMillis", 0L)
     private var serverAnchorElapsed = SystemClock.elapsedRealtime()
