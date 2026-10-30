@@ -190,6 +190,22 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
             }
     }
 
+    private fun notifyLockChange(previousIsLocked: Boolean) {
+        val current = _state.value
+        val familyId = current.familyId ?: return
+        val deviceId = current.deviceId ?: return
+        callWorker(
+            "notifyParents",
+            mapOf(
+                "familyId" to familyId,
+                "deviceId" to deviceId,
+                "previousIsLocked" to previousIsLocked,
+            ),
+            onSuccess = { },
+            onFailure = { /* Push is best-effort; locking itself must not depend on FCM. */ },
+        )
+    }
+
     private fun syncServerClock(onComplete: () -> Unit) {
         callWorker("getServerTime", emptyMap(), onSuccess = { data ->
             val serverMillis = data.optLong("serverTimeMillis", 0L)
@@ -334,7 +350,8 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                 ((oldEnd - createdAt.toDate().time) / 1000L).coerceAtLeast(0L)
             } else device.getLong("remainingSeconds") ?: 0L
 
-            var locked = device.getBoolean("isLocked") ?: true
+            val previousIsLocked = device.getBoolean("isLocked") ?: true
+            var locked = previousIsLocked
             var end = oldEnd
             var remaining = oldRemaining
             var reason = "parent_manual"
@@ -397,9 +414,10 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                     "sessionEndServerMillis" to end,
                 ),
             ))
-            Triple(locked, remaining, end)
-        }.addOnSuccessListener { result ->
-            if (result != null) {
+            Pair(Triple(locked, remaining, end), previousIsLocked)
+        }.addOnSuccessListener { outcome ->
+            if (outcome != null) {
+                val result = outcome.first
                 _state.value = _state.value.copy(
                     isLocked = result.first,
                     remainingSeconds = result.second,
@@ -407,6 +425,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                 )
                 persistState()
                 KioskController(activity).apply(result.first)
+                if (outcome.second != result.first) notifyLockChange(outcome.second)
                 db.collection("families").document(familyId).collection("devices").document(deviceId)
                     .collection("history").add(mapOf(
                         "type" to if (result.first) "lock" else "unlock",
@@ -436,7 +455,9 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                 "lastSyncAt", FieldValue.serverTimestamp(),
                 "lastSeenAt", FieldValue.serverTimestamp(),
                 "lockReason", "pin",
-            )
+            ).addOnSuccessListener {
+                if (current.isLocked) notifyLockChange(true)
+            }
             ref.collection("history").add(mapOf(
                 "type" to "unlock",
                 "reason" to "pin",
@@ -481,7 +502,9 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                         "lockReason", "time_exhausted",
                         "lastSyncAt", FieldValue.serverTimestamp(),
                         "lastSeenAt", FieldValue.serverTimestamp(),
-                    )
+                    ).addOnSuccessListener {
+                        notifyLockChange(false)
+                    }
                     ref.collection("history").add(mapOf(
                         "type" to "lock",
                         "reason" to "time_exhausted",
