@@ -98,9 +98,13 @@ FlutterFire utworzy plik mobile/lib/firebase_options.dart.
 
 Ten plik jest lokalną konfiguracją generowaną dla Twojego projektu i jest ignorowany przez Git. Nie musisz ręcznie przepisywać kluczy.
 
+Powiadomienia:
+- aplikacja poprosi o zgodę na powiadomienia i zapisze aktualny token FCM w users/{uid}/notificationTokens/{token}; token jest aktualizowany także po rotacji.
+- dla Androida 13+ manifest zawiera POST_NOTIFICATIONS; zgodę użytkownik potwierdza w systemowym oknie.
+- dla iOS otwórz mobile/ios/Runner.xcworkspace w Xcode na Macu, włącz Push Notifications w Signing & Capabilities i skonfiguruj APNs Authentication Key w Firebase Console → Project settings → Cloud Messaging.
+- dla iOS upewnij się, że GoogleService-Info.plist jest dodany do targetu Runner.
+
 Dla iOS:
-- otwórz mobile/ios/Runner.xcworkspace w Xcode na Macu,
-- upewnij się, że GoogleService-Info.plist jest dodany do targetu Runner,
 - w ios/Runner/Info.plist dodaj opis użycia kamery dla skanera QR:
 ~~~xml
 <key>NSCameraUsageDescription</key>
