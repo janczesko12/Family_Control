@@ -7,6 +7,7 @@ import android.app.admin.DeviceAdminReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Base64
@@ -114,7 +115,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
         }
         if (auth.currentUser != null) start()
         else auth.signInAnonymously().addOnSuccessListener { start() }
-            .addOnFailureListener { message("Logowanie TV: \${it.message}") }
+            .addOnFailureListener { message("Logowanie TV: ${it.message}") }
 
         viewModelScope.launch {
             while (true) {
@@ -170,7 +171,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                 _state.value = _state.value.copy(pairingSessionId = id, pairingCode = code, message = null)
                 listenToSession(id)
             }
-            .addOnFailureListener { message("Nie można utworzyć kodu parowania: \${it.message}") }
+            .addOnFailureListener { message("Nie można utworzyć kodu parowania: ${it.message}") }
     }
 
     private fun listenToSession(sessionId: String) {
@@ -178,7 +179,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
         sessionListener = db.collection("pairingSessions").document(sessionId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    message("Błąd sesji parowania: \${error.message}")
+                    message("Błąd sesji parowania: ${error.message}")
                     return@addSnapshotListener
                 }
                 if (snapshot?.getString("status") == "claimed") {
@@ -201,7 +202,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
 
         deviceListener = ref.addSnapshotListener { snapshot, error ->
             if (error != null) {
-                message("Synchronizacja TV: \${error.message}")
+                message("Synchronizacja TV: ${error.message}")
                 return@addSnapshotListener
             }
             if (snapshot == null || !snapshot.exists()) return@addSnapshotListener
@@ -243,7 +244,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
             .orderBy("createdAt", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    message("Błąd poleceń: \${error.message}")
+                    message("Błąd poleceń: ${error.message}")
                     return@addSnapshotListener
                 }
                 snapshot?.documents?.forEach { applyCommand(it.id) }
@@ -350,7 +351,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                         "usedSeconds" to 0,
                     ))
             }
-        }.addOnFailureListener { message("Nie udało się wykonać polecenia: \${it.message}") }
+        }.addOnFailureListener { message("Nie udało się wykonać polecenia: ${it.message}") }
     }
 
     fun unlockWithPin(value: String): Boolean {
@@ -509,7 +510,9 @@ class KioskController(private val activity: Activity) {
         try {
             if (dpm.isDeviceOwnerApp(activity.packageName)) {
                 dpm.setLockTaskPackages(admin, arrayOf(activity.packageName))
-                dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+                }
             }
             val mode = manager.lockTaskModeState
             if (locked) {
@@ -546,7 +549,7 @@ private fun PairingScreen(state: TvState) {
     val code = state.pairingCode ?: "------"
     val bitmap = remember(code) {
         if (code == "------") null
-        else makeQr("fc://pair?session=\${state.pairingSessionId}&code=$code&tvUid=\${FirebaseAuth.getInstance().currentUser?.uid}")
+        else makeQr("fc://pair?session=${state.pairingSessionId}&code=$code&tvUid=${FirebaseAuth.getInstance().currentUser?.uid}")
     }
     Box(Modifier.fillMaxSize().padding(48.dp), contentAlignment = Alignment.Center) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
@@ -620,7 +623,7 @@ private fun UnlockedScreen(state: TvState) {
 }
 
 private fun formatSeconds(total: Long): String =
-    "\${total / 60}:\${(total % 60).toString().padStart(2, '0')}"
+    "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
 
 private fun makeQr(value: String): Bitmap? = try {
     val matrix = MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE, 360, 360)

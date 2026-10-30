@@ -407,7 +407,7 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
                   children: [
                     const Icon(Icons.cloud_off, size: 48),
                     const SizedBox(height: 12),
-                    Text('Nie udało się połączyć z Firebase: \${familySnapshot.error}'),
+                    Text('Nie udało się połączyć z Firebase: ${familySnapshot.error}'),
                     const SizedBox(height: 12),
                     FilledButton(
                       onPressed: () => setState(() => _familyFuture = _loadFamily()),
@@ -427,7 +427,7 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
                 .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                return Center(child: Text('Błąd Firestore: \${snapshot.error}'));
+                return Center(child: Text('Błąd Firestore: ${snapshot.error}'));
               }
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
               final devices = snapshot.data!.docs;
@@ -661,6 +661,6 @@ String _formatTime(int seconds) {
   final hours = safe ~/ 3600;
   final minutes = (safe % 3600) ~/ 60;
   final secs = safe % 60;
-  if (hours > 0) return '\${hours}:\${minutes.toString().padLeft(2, '0')}:\${secs.toString().padLeft(2, '0')}';
-  return '\${minutes.toString().padLeft(2, '0')}:\${secs.toString().padLeft(2, '0')}';
+  if (hours > 0) return '${hours}:${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
 }
