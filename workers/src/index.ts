@@ -457,24 +457,32 @@ async function sendCommand(request: Request, env: Env, body: Record<string, any>
   }
 
   const devicePath = "families/" + familyId + "/devices/" + deviceId;
-  const device = await getDocument(env, devicePath);
-  if (!device) throw new ApiError(404, "Nie znaleziono telewizora.");
-  if (device.data.revokedAt) throw new ApiError(403, "To urządzenie zostało odłączone.");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const device = await getDocument(env, devicePath);
+    if (!device) throw new ApiError(404, "Nie znaleziono telewizora.");
+    if (device.data.revokedAt) throw new ApiError(403, "To urządzenie zostało odłączone.");
 
-  const commandId = randomId();
-  const now = new Date();
-  await commit(env, [
-    createWrite(env, devicePath + "/commands/" + commandId, {
-      commandId,
-      type,
-      payload,
-      createdBy: auth.uid,
-      createdAt: now,
-      status: "pending",
-    }),
-    updateWrite(env, devicePath, { lastCommandAt: now }, undefined, true),
-  ]);
-  return json({ ok: true, commandId });
+    const commandId = randomId();
+    const now = new Date();
+    try {
+      await commit(env, [
+        createWrite(env, devicePath + "/commands/" + commandId, {
+          commandId,
+          type,
+          payload,
+          createdBy: auth.uid,
+          createdAt: now,
+          status: "pending",
+        }),
+        // Precondition prevents a command racing with a concurrent device revoke.
+        updateWrite(env, devicePath, { lastCommandAt: now }, device.updateTime),
+      ]);
+      return json({ ok: true, commandId });
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 409 || attempt === 2) throw error;
+    }
+  }
+  throw new ApiError(409, "Telewizor zmienił stan. Ponów wysłanie polecenia.");
 }
 
 async function notifyParentsForDevice(env: Env, familyId: string, deviceId: string): Promise<void> {
