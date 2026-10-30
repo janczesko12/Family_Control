@@ -58,7 +58,7 @@ flutter pub get
 flutterfire configure --project=familycontrol-f4a9f --platforms=android,ios
 ```
 
-Wybierz projekt `familycontrol-f4a9f) i odpowiednie aplikacje. FlutterFire utworzy `mobile/lib/firebase_options.dart`.
+Wybierz projekt `familycontrol-f4a9f` i odpowiednie aplikacje. FlutterFire utworzy `mobile/lib/firebase_options.dart`.
 
 Dla iOS konfigurację kończysz na Macu w Xcode: dodaj GoogleService-Info.plist do Runner, włącz Push Notifications i skonfiguruj APNs w Firebase Console → Project settings → Cloud Messaging.
 
@@ -75,12 +75,13 @@ Aktualne reguły pozwalają rodzicowi tworzyć polecenia i aktualizować wyłąc
 
 Worker musi mieć dostęp do Firestore i możliwość wysyłania powiadomień FCM.
 
-1. Otwórz Google Cloud Console → IAM & Admin → Service Accounts.
-2. Utwórz osobne konto usługi, np. `family-control-worker`.
-3. Nadaj mu tylko te role:
+1. W Google Cloud Console → APIs & Services → Library upewnij się, że włączone są Cloud Firestore API (`firestore.googleapis.com`) oraz Firebase Cloud Messaging API (`fcm.googleapis.com`).
+2. Otwórz Google Cloud Console → IAM & Admin → Service Accounts.
+3. Utwórz osobne konto usługi, np. `family-control-worker`.
+4. Nadaj mu tylko te role:
    - Cloud Datastore User — `roles/datastore.user`.
    - Firebase Cloud Messaging Service Editor — `roles/cloudmessaging.editor`.
-4. Utwórz klucz JSON tego konta i zapisz go lokalnie.
+5. Utwórz klucz JSON tego konta i zapisz go lokalnie.
 
 **Ten JSON jest sekretem serwera.** Nie wklejaj go do kodu, repozytorium Git ani czatu. Nie używaj w jego miejsce pliku `google-services.json` z aplikacji.
 
@@ -95,7 +96,7 @@ npm run typecheck
 npm run deploy
 ```
 
-Wrangler pokaże adres, np. `https://family-control-api.twoj-login.workers.dev). Skopiuj dokładny adres.
+Wrangler pokaże adres, np. `https://family-control-api.twoj-login.workers.dev`. Skopiuj dokładny adres.
 
 Dodaj klucz konta usługi do Cloudflare jako zaszyfrowany sekret:
 ```powershell
@@ -105,6 +106,8 @@ npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
 Gdy Wrangler poprosi o wartość, wklej całą zawartość lokalnego pliku JSON konta usługi. Nie wklejaj jej tutaj. Cloudflare zapisze ją jako Worker Secret.
 
 Po dodaniu sekretu Wrangler opublikuje nową wersję Workera. W razie rotacji klucza powtórz polecenie z nowym JSON-em i usuń stary klucz w Google Cloud.
+
+Na bezpłatnym planie Cloudflare Workers limit wynosi obecnie 100 000 żądań dziennie i 10 ms CPU na żądanie. Jeśli projekt przekroczy te limity, będzie trzeba zmienić plan Cloudflare. Nie zmienia to planu rozliczeniowego Firebase.
 
 ## 9. Budowanie aplikacji z adresem Workera
 
