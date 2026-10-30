@@ -25,3 +25,9 @@ backend/functions/lib/
 # Local SDK archives and generated packages
 .tooling/
 artifacts/*.apk
+
+# Cloudflare Workers local state
+workers/node_modules/
+workers/.wrangler/
+workers/.dev.vars
+**/.dev.vars
