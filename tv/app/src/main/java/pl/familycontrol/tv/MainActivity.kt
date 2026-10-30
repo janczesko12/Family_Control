@@ -8,6 +8,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Base64
@@ -39,13 +41,15 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
-import com.google.firebase.functions.FirebaseFunctions
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
@@ -88,7 +92,6 @@ class MainActivity : ComponentActivity() {
 class TvViewModel(private val appContext: Context, private val activity: Activity) : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseFirestore.getInstance()
-    private val functions = FirebaseFunctions.getInstance()
     private val prefs = appContext.getSharedPreferences("family_control_tv", Context.MODE_PRIVATE)
     private val pin = PinVerifier(prefs)
     private val _state = MutableStateFlow(
@@ -104,6 +107,7 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
     private var deviceListener: ListenerRegistration? = null
     private var commandListener: ListenerRegistration? = null
     private var sessionListener: ListenerRegistration? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var serverOffsetMillis = prefs.getLong("serverTimeOffsetMillis", 0)
     private var lastHeartbeatElapsed = SystemClock.elapsedRealtime()
 
@@ -126,28 +130,85 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
         }
     }
 
-    private fun syncServerClock(onComplete: () -> Unit) {
-        functions.getHttpsCallable("getServerTime").call()
-            .addOnSuccessListener { result ->
-                val data = result.data as? Map<*, *>
-                val serverMillis = (data?.get("serverTimeMillis") as? Number)?.toLong() ?: 0L
-                if (serverMillis > 0L) {
-                    serverAnchorMillis = serverMillis
-                    serverAnchorWallMillis = System.currentTimeMillis()
-                    serverAnchorElapsed = SystemClock.elapsedRealtime()
-                    serverOffsetMillis = serverMillis - serverAnchorWallMillis
-                    prefs.edit()
-                        .putLong("serverAnchorMillis", serverAnchorMillis)
-                        .putLong("serverAnchorWallMillis", serverAnchorWallMillis)
-                        .putLong("serverTimeOffsetMillis", serverOffsetMillis)
-                        .apply()
+    private fun callWorker(
+        endpoint: String,
+        body: Map<String, Any>,
+        onSuccess: (JSONObject) -> Unit,
+        onFailure: (String) -> Unit = {},
+    ) {
+        val user = auth.currentUser
+        if (user == null) {
+            onFailure("Telewizor nie jest zalogowany.")
+            return
+        }
+        user.getIdToken(false)
+            .addOnSuccessListener { tokenResult ->
+                val token = tokenResult.token
+                if (token.isNullOrBlank()) {
+                    onFailure("Nie udało się pobrać tokenu Firebase.")
+                    return@addOnSuccessListener
                 }
-                onComplete()
+                Thread {
+                    var connection: HttpURLConnection? = null
+                    try {
+                        val baseUrl = BuildConfig.FAMILY_CONTROL_API_URL.trimEnd('/')
+                        require(!baseUrl.contains("YOUR-SUBDOMAIN")) {
+                            "Ustaw FAMILY_CONTROL_API_URL w konfiguracji Gradle."
+                        }
+                        connection = URL("$baseUrl/$endpoint").openConnection() as HttpURLConnection
+                        connection.requestMethod = "POST"
+                        connection.connectTimeout = 15000
+                        connection.readTimeout = 20000
+                        connection.doOutput = true
+                        connection.setRequestProperty("Authorization", "Bearer $token")
+                        connection.setRequestProperty("Content-Type", "application/json")
+                        connection.outputStream.use {
+                            it.write(JSONObject(body).toString().toByteArray(Charsets.UTF_8))
+                        }
+                        val status = connection.responseCode
+                        val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                        val responseText = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                        val response = if (responseText.isBlank()) JSONObject() else JSONObject(responseText)
+                        if (status in 200..299 && response.optBoolean("ok")) {
+                            val data = response.optJSONObject("data") ?: response
+                            mainHandler.post { onSuccess(data) }
+                        } else {
+                            val error = response.optJSONObject("error")
+                            val reason = error?.optString("message")?.takeIf { it.isNotBlank() }
+                                ?: "Backend zwrócił HTTP $status."
+                            mainHandler.post { onFailure(reason) }
+                        }
+                    } catch (error: Exception) {
+                        mainHandler.post { onFailure(error.message ?: "Nie udało się połączyć z backendem.") }
+                    } finally {
+                        connection?.disconnect()
+                    }
+                }.start()
             }
-            .addOnFailureListener {
-                // Offline startup uses the last persisted server-time anchor.
-                onComplete()
+            .addOnFailureListener { error ->
+                onFailure(error.message ?: "Nie udało się pobrać tokenu Firebase.")
             }
+    }
+
+    private fun syncServerClock(onComplete: () -> Unit) {
+        callWorker("getServerTime", emptyMap(), onSuccess = { data ->
+            val serverMillis = data.optLong("serverTimeMillis", 0L)
+            if (serverMillis > 0L) {
+                serverAnchorMillis = serverMillis
+                serverAnchorWallMillis = System.currentTimeMillis()
+                serverAnchorElapsed = SystemClock.elapsedRealtime()
+                serverOffsetMillis = serverMillis - serverAnchorWallMillis
+                prefs.edit()
+                    .putLong("serverAnchorMillis", serverAnchorMillis)
+                    .putLong("serverAnchorWallMillis", serverAnchorWallMillis)
+                    .putLong("serverTimeOffsetMillis", serverOffsetMillis)
+                    .apply()
+            }
+            onComplete()
+        }, onFailure = {
+            // Offline startup uses the last persisted server-time anchor.
+            onComplete()
+        })
     }
 
     private fun updateServerAnchor(serverMillis: Long) {
@@ -163,22 +224,19 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
     }
 
     private fun createPairingSession() {
-        functions.getHttpsCallable("createTvPairingSession").call()
-            .addOnSuccessListener { result ->
-                val data = result.data as? Map<*, *> ?: return@addOnSuccessListener
-                val id = data["sessionId"] as? String ?: return@addOnSuccessListener
-                val code = data["code"] as? String ?: return@addOnSuccessListener
-                prefs.edit().putString("pairingSessionId", id).apply()
-                val expiresAt = (data["expiresAt"] as? Number)?.toLong() ?: 0L
-                _state.value = _state.value.copy(
-                    pairingSessionId = id,
-                    pairingCode = code,
-                    pairingExpiresAt = expiresAt,
-                    message = null,
-                )
-                listenToSession(id)
-            }
-            .addOnFailureListener { message("Nie można utworzyć kodu parowania: ${it.message}") }
+        callWorker("createTvPairingSession", emptyMap(), onSuccess = { data ->
+            val id = data.optString("sessionId").takeIf { it.isNotBlank() } ?: return@callWorker
+            val code = data.optString("code").takeIf { it.isNotBlank() } ?: return@callWorker
+            prefs.edit().putString("pairingSessionId", id).apply()
+            val expiresAt = data.optLong("expiresAt", 0L)
+            _state.value = _state.value.copy(
+                pairingSessionId = id,
+                pairingCode = code,
+                pairingExpiresAt = expiresAt,
+                message = null,
+            )
+            listenToSession(id)
+        }, onFailure = { message("Nie można utworzyć kodu parowania: $it") })
     }
 
     private fun listenToSession(sessionId: String) {
