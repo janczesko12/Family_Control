@@ -1,0 +1,33 @@
+name: Worker TypeScript check
+
+on:
+  pull_request:
+    paths:
+      - "backend/worker/**"
+      - ".github/workflows/worker-typecheck.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/worker/**"
+      - ".github/workflows/worker-typecheck.yml"
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/worker/package-lock.json
+      - name: Install dependencies
+        run: npm install
+      - name: TypeScript check
+        run: npm run typecheck
