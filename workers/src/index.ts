@@ -298,6 +298,14 @@ function requireString(value: unknown, name: string): string {
   return value.trim();
 }
 
+function requireDocumentId(value: unknown, name: string): string {
+  const id = requireString(value, name);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
+    throw new ApiError(400, "Nieprawidłowy identyfikator: " + name + ".");
+  }
+  return id;
+}
+
 function randomId(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
@@ -381,7 +389,7 @@ async function createTvPairingSession(request: Request, env: Env): Promise<Respo
 
 async function claimPairingSession(request: Request, env: Env, body: Record<string, any>): Promise<Response> {
   const { auth, familyId } = await requireParent(request, env);
-  const sessionId = requireString(body.sessionId, "sessionId");
+  const sessionId = requireDocumentId(body.sessionId, "sessionId");
   const code = requireString(body.code, "code");
   const tvUid = requireString(body.tvUid, "tvUid");
   const name = typeof body.deviceName === "string" && body.deviceName.trim()
@@ -437,7 +445,7 @@ async function claimPairingSession(request: Request, env: Env, body: Record<stri
 async function sendCommand(request: Request, env: Env, body: Record<string, any>): Promise<Response> {
   const { auth, familyId } = await requireParent(request, env);
   const requestedFamily = requireString(body.familyId, "familyId");
-  const deviceId = requireString(body.deviceId, "deviceId");
+  const deviceId = requireDocumentId(body.deviceId, "deviceId");
   const type = requireString(body.type, "type");
   if (requestedFamily !== familyId) throw new ApiError(403, "Urządzenie nie należy do tej rodziny.");
 
@@ -559,7 +567,7 @@ async function reportDeviceState(request: Request, env: Env, body: Record<string
   const auth = await authenticate(request, env);
   if (auth.provider !== "anonymous") throw new ApiError(403, "Zgłoszenie stanu może wysłać tylko TV.");
   const familyId = requireString(body.familyId, "familyId");
-  const deviceId = requireString(body.deviceId, "deviceId");
+  const deviceId = requireDocumentId(body.deviceId, "deviceId");
   const device = await getDocument(env, "families/" + familyId + "/devices/" + deviceId);
   if (!device || device.data.tvUid !== auth.uid || device.data.revokedAt) {
     throw new ApiError(403, "To urządzenie nie jest aktywnie przypisane do tego telewizora.");
@@ -571,7 +579,7 @@ async function reportDeviceState(request: Request, env: Env, body: Record<string
 async function revokeTv(request: Request, env: Env, body: Record<string, any>): Promise<Response> {
   const { familyId } = await requireParent(request, env);
   const requestedFamily = requireString(body.familyId, "familyId");
-  const deviceId = requireString(body.deviceId, "deviceId");
+  const deviceId = requireDocumentId(body.deviceId, "deviceId");
   if (requestedFamily !== familyId) throw new ApiError(403, "Urządzenie nie należy do tej rodziny.");
   const path = "families/" + familyId + "/devices/" + deviceId;
   let revoked = false;
