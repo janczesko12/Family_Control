@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userFamily(familyId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId;
+    }
+    function isParent(familyId) {
+      return userFamily(familyId)
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent';
+    }
+    function isTv(familyId, deviceId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/families/$(familyId)/devices/$(deviceId)).data.tvUid == request.auth.uid;
+    }
+    function validCommand() {
+      return request.resource.data.keys().hasAll(['type', 'createdBy', 'createdAt', 'status', 'payload'])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.type in ['lock', 'unlock', 'add_time', 'set_limit', 'reset_day', 'set_pin', 'set_weekly_limits']
+        && request.resource.data.payload is map;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid;
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName']);
+      match /notificationTokens/{tokenId} {
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.token == tokenId;
+        allow delete: if signedIn() && request.auth.uid == uid;
+        allow read: if false;
+      }
+    }
+
+    match /families/{familyId} {
+      allow read: if isParent(familyId);
+      allow create: if signedIn() && request.resource.data.parentIds.hasAny([request.auth.uid]);
+      allow update: if isParent(familyId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']);
+
+      match /devices/{deviceId} {
+        allow read: if isParent(familyId) || isTv(familyId, deviceId);
+        allow create: if isParent(familyId)
+          && request.resource.data.tvUid is string
+          && request.resource.data.isLocked == true;
+        // Parents can change presentation metadata only. State changes come from TV or Functions.
+        allow update: if isParent(familyId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']);
+        allow update: if isTv(familyId, deviceId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'isLocked', 'remainingSeconds', 'usedSecondsToday', 'lastSyncAt', 'lastSeenAt',
+            'lockReason', 'lastAppliedCommandId', 'clockTrusted', 'sessionStartServerMillis',
+            'sessionEndServerMillis', 'updatedAt'
+          ])
+          && request.resource.data.remainingSeconds >= 0
+          && request.resource.data.usedSecondsToday >= 0;
+
+        match /commands/{commandId} {
+          allow read: if isParent(familyId) || isTv(familyId, deviceId);
+          allow create: if isParent(familyId) && validCommand()
+            && commandId == request.resource.data.commandId;
+          allow update: if isTv(familyId, deviceId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'appliedAt', 'error', 'deviceResult'
+            ])
+            && resource.data.status == 'pending'
+            && request.resource.data.status in ['acknowledged', 'failed'];
+        }
+
+        match /history/{eventId} {
+          allow read: if isParent(familyId) || isTv(familyId, deviceId);
+          allow create: if isTv(familyId, deviceId)
+            && request.resource.data.actorUid == request.auth.uid;
+        }
+      }
+    }
+
+    match /pairingSessions/{sessionId} {
+      allow read: if signedIn() && resource.data.tvUid == request.auth.uid;
+      // Creation and claiming are callable Functions with Admin SDK.
+      allow write: if false;
+    }
+  }
+}

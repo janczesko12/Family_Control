@@ -1,0 +1,23 @@
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/build/
+**/node_modules/
+**/lib/
+**/google-services.json
+**/GoogleService-Info.plist
+**/firebase_options.dart
+*.jks
+*.keystore
+.env
+
+# Flutter SDK archives and local tooling
+.tooling/
+
+# Generated APK files
+artifacts/*.apk
+
+# Build outputs
+build/
+.dart_tool/
+.gradle/

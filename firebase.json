@@ -1,0 +1,10 @@
+{
+  "firestore": {
+    "rules": "firebase/firestore.rules",
+    "indexes": "firebase/firestore.indexes.json"
+  },
+  "functions": {
+    "source": "backend/functions",
+    "runtime": "nodejs20"
+  }
+}
