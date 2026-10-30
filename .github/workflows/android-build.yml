@@ -1,0 +1,91 @@
+name: Android app compile checks
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "tv/**"
+      - ".github/workflows/android-build.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "mobile/**"
+      - "tv/**"
+      - ".github/workflows/android-build.yml"
+
+jobs:
+  parent-app:
+    name: Flutter parent app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Add temporary Firebase build config
+        working-directory: mobile
+        shell: bash
+        run: |
+          mkdir -p android/app
+          cat > android/app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "familycontrol-f4a9f",
+              "storage_bucket": "familycontrol-f4a9f.appspot.com"
+            },
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
+                "android_client_info": { "package_name": "com.familycontrol.app" }
+              },
+              "api_key": [{ "current_key": "CI_ONLY_NOT_A_REAL_KEY" }],
+              "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+            }],
+            "configuration_version": "1"
+          }
+          JSON
+          cat > lib/firebase_options.dart <<'DART'
+          import 'package:firebase_core/firebase_core.dart';
+          class DefaultFirebaseOptions {
+            static const FirebaseOptions currentPlatform = FirebaseOptions(
+              apiKey: 'CI_ONLY_NOT_A_REAL_KEY',
+              appId: '1:123456789012:android:0123456789abcdef',
+              messagingSenderId: '123456789012',
+              projectId: 'familycontrol-f4a9f',
+              storageBucket: 'familycontrol-f4a9f.appspot.com',
+            );
+          }
+          DART
+      - name: Get Flutter packages
+        working-directory: mobile
+        run: flutter pub get
+      - name: Build parent APK
+        working-directory: mobile
+        run: flutter build apk --debug --dart-define=FAMILY_CONTROL_API_URL=https://ci-placeholder.workers.dev
+
+  tv-app:
+    name: Android TV app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Build TV APK
+        working-directory: tv
+        run: ./gradlew assembleDebug -PFAMILY_CONTROL_API_URL=https://ci-placeholder.workers.dev
