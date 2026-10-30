@@ -347,12 +347,11 @@ async function createTvPairingSession(request: Request, env: Env): Promise<Respo
   const auth = await authenticate(request, env);
   if (auth.provider !== "anonymous") throw new ApiError(403, "Sesję parowania może utworzyć tylko konto TV.");
   const random = new Uint32Array(1);
-  let number = 0;
+  const limit = Math.floor(0x1_0000_0000 / 900000) * 900000;
   do {
     crypto.getRandomValues(random);
-    number = random[0] % 900000;
-  } while (number < 0);
-  const code = String(100000 + number);
+  } while (random[0] >= limit);
+  const code = String(100000 + (random[0] % 900000));
   const sessionId = randomId();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
   await commit(env, [createWrite(env, "pairingSessions/" + sessionId, {
@@ -519,7 +518,9 @@ async function reportDeviceState(request: Request, env: Env, body: Record<string
   const familyId = requireString(body.familyId, "familyId");
   const deviceId = requireString(body.deviceId, "deviceId");
   const device = await getDocument(env, "families/" + familyId + "/devices/" + deviceId);
-  if (!device || device.data.tvUid !== auth.uid) throw new ApiError(403, "To urządzenie nie jest przypisane do tego telewizora.");
+  if (!device || device.data.tvUid !== auth.uid || device.data.revokedAt) {
+    throw new ApiError(403, "To urządzenie nie jest aktywnie przypisane do tego telewizora.");
+  }
   await notifyParentsForDevice(env, familyId, deviceId);
   return json({ ok: true });
 }
