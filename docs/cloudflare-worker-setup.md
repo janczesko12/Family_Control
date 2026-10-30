@@ -39,16 +39,34 @@ npx wrangler login
 npm run typecheck
 ~~~
 
-Dodaj klucz JSON jako zaszyfrowany sekret Cloudflare. Polecenie odczyta plik lokalny i przekaże jego zawartość do Wrangler:
+Pierwsze wdrożenie nowego Workera wykonaj razem z sekretem. W konfiguracji `wrangler.jsonc` wymagany sekret jest sprawdzany już podczas deploy, dlatego dla pierwszej publikacji użyj `--secrets-file`. Poniższy przykład zakłada, że pobrany klucz konta serwisowego znajduje się w folderze Pobrane — poza repozytorium:
 
 ~~~powershell
-Get-Content -Raw .\family-control-worker.json | npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
+$serviceAccountPath = Join-Path $env:USERPROFILE "Downloads\family-control-worker.json"
+$serviceAccountJson = Get-Content -Raw $serviceAccountPath
+$secretsPath = Join-Path $env:TEMP "family-control-worker-secrets.json"
+$secretsJson = @{ FIREBASE_SERVICE_ACCOUNT_JSON = $serviceAccountJson } | ConvertTo-Json -Compress
+Set-Content -Path $secretsPath -Value $secretsJson -Encoding utf8 -NoNewline
+
+npx wrangler deploy --secrets-file $secretsPath
+$deployExitCode = $LASTEXITCODE
+Remove-Item $secretsPath -Force
+
+if ($deployExitCode -ne 0) {
+    throw "Wdrożenie Cloudflare Worker nie powiodło się."
+}
 ~~~
 
-Plik JSON zostaw poza repozytorium. Po dodaniu sekretu wdróż Worker:
+Plik klucza konta serwisowego pozostaje poza repozytorium, a plik tymczasowy jest usuwany po wdrożeniu. Przy kolejnych aktualizacjach kodu wystarczy:
 
 ~~~powershell
 npm run deploy
+~~~
+
+Gdy trzeba zmienić sekret, dla już utworzonego Workera użyj:
+
+~~~powershell
+Get-Content -Raw $serviceAccountPath | npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
 ~~~
 
 Wrangler wyświetli adres w postaci:
