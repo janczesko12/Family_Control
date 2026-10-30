@@ -245,7 +245,7 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
   void initState() {
     super.initState();
     _familyFuture = _loadFamily();
-    _registerPushNotifications();
+    unawaited(_registerPushNotifications());
     _messageSubscription = FirebaseMessaging.onMessage.listen((message) {
       if (!mounted) return;
       final title = message.notification?.title ?? 'Family Control';
@@ -282,7 +282,7 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
       final token = await messaging.getToken();
       if (token != null && mounted) await saveToken(token);
       _tokenSubscription = messaging.onTokenRefresh.listen((newToken) {
-        saveToken(newToken);
+        unawaited(saveToken(newToken));
       });
     } catch (error) {
       // Push notifications are optional; the TV controls still work if FCM is unavailable.
@@ -498,7 +498,6 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
                   ...devices.map((device) => Padding(
                     padding: const EdgeInsets.only(bottom: 14),
                     child: _DeviceCard(
-                      familyId: familyId,
                       deviceId: device.id,
                       data: device.data(),
                       onCommand: (type, payload) => _sendCommand(
@@ -550,7 +549,6 @@ class _EmptyState extends StatelessWidget {
 
 class _DeviceCard extends StatelessWidget {
   const _DeviceCard({
-    required this.familyId,
     required this.deviceId,
     required this.data,
     required this.onCommand,
@@ -558,7 +556,6 @@ class _DeviceCard extends StatelessWidget {
     required this.onSet,
   });
 
-  final String familyId;
   final String deviceId;
   final Map<String, dynamic> data;
   final Future<void> Function(String, Map<String, dynamic>) onCommand;
