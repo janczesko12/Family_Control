@@ -31,3 +31,8 @@ workers/node_modules/
 workers/.wrangler/
 workers/.dev.vars
 **/.dev.vars
+
+# Local Google Cloud service-account keys
+family-control-worker.json
+workers/family-control-worker.json
+**/*service-account*.json
