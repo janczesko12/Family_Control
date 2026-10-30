@@ -1,42 +1,36 @@
 # Family Control TV
 
-System do kontroli czasu telewizora TCL z aplikacji rodzica. Repozytorium zawiera aplikację TV (Kotlin/Android TV), aplikację rodzica (Flutter), Firebase Cloud Functions i reguły Firestore.
+System do kontroli czasu telewizora TCL z aplikacji rodzica. Aplikacja rodzica i TV korzystają z Firebase Authentication oraz Firestore. Backend aplikacyjny działa jako Cloudflare Worker.
 
 ## Moduły
 
-- tv/ — ekran TV, QR do parowania, PIN offline 6744, licznik sesji oparty o serwerowy czas zakończenia i opcjonalny Lock Task Mode.
-- mobile/ — aplikacja rodzica: logowanie, parowanie QR, blokowanie, odblokowywanie, dodawanie czasu i ustawianie limitu.
-- backend/functions/ — tworzenie rodziny, parowanie z ograniczeniem prób, odłączanie TV, audyt i powiadomienia.
-- firebase/ — reguły i indeksy Firestore.
-- docs/ — konfiguracja Firebase, budowanie, testowanie i ograniczenia TCL.
+- `tv/` — aplikacja Android TV, ekran blokady, PIN offline 6744 i licznik sesji.
+- `mobile/` — aplikacja rodzica Flutter: logowanie, parowanie QR, blokowanie, odblokowywanie i limity czasu.
+- `backend/worker/` — backend HTTP na Cloudflare Workers; zastępuje Firebase Cloud Functions.
+- `backend/functions/` — historyczna kopia poprzednich funkcji; nie jest już wdrażana.
+- `firebase/` — reguły i indeksy Firestore.
+- `docs/` — instrukcje konfiguracji, budowania i ograniczenia TCL.
 
 ## Wymagania
 
-Flutter SDK, Android SDK, JDK 17, Node.js 20 LTS, Firebase CLI i FlutterFire CLI.
+Flutter SDK, Android SDK, JDK 17, Node.js 22, npm, Firebase CLI i Wrangler.
 
 ## Szybki start
 
-Pełna instrukcja: docs/firebase-setup.md.
+Pełna instrukcja: [docs/firebase-setup.md](docs/firebase-setup.md).
 
 1. W Firebase włącz Email/Password oraz Anonymous Authentication.
-2. Utwórz Firestore.
-3. Dodaj aplikacje Android o pakietach pl.familycontrol.tv i com.familycontrol.app.
-4. Umieść google-services.json dla TV w tv/app/.
-5. W mobile uruchom flutterfire configure --project=familycontrol-f4a9f --platforms=android,ios.
-6. Z katalogu głównego wdróż reguły, indeksy i funkcje:
-   firebase deploy --project familycontrol-f4a9f --only firestore:rules,firestore:indexes,functions
-7. Zbuduj obie aplikacje z katalogu głównego:
-~~~powershell
-cd tv
-.\gradlew.bat assembleDebug
-cd ..
-cd mobile
-flutter pub get
-flutter build apk --debug
-cd ..
-~~~
+2. Utwórz Firestore i dodaj aplikacje Android: `pl.familycontrol.tv` oraz `com.familycontrol.app`.
+3. Pobierz lokalne pliki `google-services.json` do odpowiednich katalogów i skonfiguruj FlutterFire.
+4. Z katalogu głównego wdroż reguły oraz indeksy:
+   ```powershell
+   firebase deploy --project familycontrol-f4a9f --only firestore:rules,firestore:indexes
+   ```
+5. Skonfiguruj dedykowane konto usługi Google i wdroż Worker z `backend/worker/`.
+6. Dodaj JSON konta usługi do Cloudflare jako sekret `FIREBASE_SERVICE_ACCOUNT_JSON`.
+7. Zbuduj obie aplikacje, podając adres Worker przez `FAMILY_CONTROL_API_URL`.
 
-Cloud Functions wymagają planu Blaze. Ustaw alert budżetowy w Google Cloud/Firebase.
+Cloud Functions nie są wymagane. Firebase pozostaje bazą danych i dostawcą logowania; Worker obsługuje operacje serwerowe.
 
 ## Ważne ograniczenie blokady
 
@@ -44,4 +38,4 @@ Bez Device Owner/Lock Task aplikacja może blokować swój własny ekran, ale ni
 
 ## Prywatna konfiguracja
 
-Nie commituj google-services.json, mobile/lib/firebase_options.dart, kluczy service account, plików .env ani własnego keystore. APK publikuj w GitHub Releases, nie w repozytorium źródłowym.
+Nie commituj plików `google-services.json`, `mobile/lib/firebase_options.dart`, kluczy kont usług, plików `.dev.vars`, `.env` ani własnego keystore. APK publikuj w GitHub Releases, nie w repozytorium źródłowym.
