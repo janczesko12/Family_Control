@@ -60,6 +60,7 @@ data class TvState(
     val sessionEndServerMillis: Long = 0,
     val pairingSessionId: String? = null,
     val pairingCode: String? = null,
+    val pairingExpiresAt: Long? = null,
     val message: String? = null,
 )
 
@@ -168,7 +169,13 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
                 val id = data["sessionId"] as? String ?: return@addOnSuccessListener
                 val code = data["code"] as? String ?: return@addOnSuccessListener
                 prefs.edit().putString("pairingSessionId", id).apply()
-                _state.value = _state.value.copy(pairingSessionId = id, pairingCode = code, message = null)
+                val expiresAt = (data["expiresAt"] as? Number)?.toLong() ?: 0L
+                _state.value = _state.value.copy(
+                    pairingSessionId = id,
+                    pairingCode = code,
+                    pairingExpiresAt = expiresAt,
+                    message = null,
+                )
                 listenToSession(id)
             }
             .addOnFailureListener { message("Nie można utworzyć kodu parowania: ${it.message}") }
@@ -385,6 +392,19 @@ class TvViewModel(private val appContext: Context, private val activity: Activit
 
     private fun tick() {
         val current = _state.value
+        val pairingExpiry = current.pairingExpiresAt
+        if (current.deviceId == null && pairingExpiry != null && pairingExpiry > 0L &&
+            serverNowMillis() >= pairingExpiry
+        ) {
+            sessionListener?.remove()
+            prefs.edit().remove("pairingSessionId").apply()
+            _state.value = current.copy(
+                pairingSessionId = null,
+                pairingCode = null,
+                pairingExpiresAt = null,
+            )
+            createPairingSession()
+        }
         if (!current.isLocked && current.sessionEndServerMillis > 0L) {
             val remaining = ((current.sessionEndServerMillis - serverNowMillis()) / 1000L).coerceAtLeast(0L)
             if (remaining != current.remainingSeconds) {
