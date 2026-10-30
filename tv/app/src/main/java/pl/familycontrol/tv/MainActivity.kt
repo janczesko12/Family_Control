@@ -531,7 +531,7 @@ class KioskController(private val activity: Activity) {
             if (dpm.isDeviceOwnerApp(activity.packageName)) {
                 dpm.setLockTaskPackages(admin, arrayOf(activity.packageName))
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+                    dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS)
                 }
             }
             val mode = manager.lockTaskModeState
