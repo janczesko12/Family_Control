@@ -4,7 +4,7 @@ System do kontroli czasu telewizora TCL z aplikacji rodzica. Repozytorium zawier
 
 ## Moduły
 
-- tv/ — ekran TV, QR do parowania, PIN offline 6744, licznik sesji oparty o serwerowy czas zakończenia i opcjonalny Lock Task Mode.
+- tv/ — ekran TV, QR do parowania, PIN offline ####, licznik sesji oparty o serwerowy czas zakończenia i opcjonalny Lock Task Mode.
 - mobile/ — aplikacja rodzica: logowanie, parowanie QR, blokowanie, odblokowywanie, dodawanie czasu i ustawianie limitu.
 - backend/functions/ — tworzenie rodziny, parowanie z ograniczeniem prób, odłączanie TV, audyt i powiadomienia.
 - firebase/ — reguły i indeksy Firestore.
