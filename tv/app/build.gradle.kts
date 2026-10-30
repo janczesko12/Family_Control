@@ -1,11 +1,11 @@
-val workerApiUrl = providers.gradleProperty("workerApiUrl").orElse("").get()
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.gms.google-services")
 }
+
+val workerApiUrl = providers.gradleProperty("workerApiUrl").orElse("").get()
 
 android { namespace = "pl.familycontrol.tv"; compileSdk = 35
     defaultConfig {
