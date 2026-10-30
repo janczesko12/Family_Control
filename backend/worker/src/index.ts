@@ -57,6 +57,12 @@ function decodeBase64Url(value: string): Uint8Array {
   return output;
 }
 
+function toArrayBuffer(value: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(value.byteLength);
+  copy.set(value);
+  return copy.buffer as ArrayBuffer;
+}
+
 function encodeBase64Url(value: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < value.length; i++) binary += String.fromCharCode(value[i]);
@@ -127,7 +133,7 @@ async function verifyFirebaseToken(request: Request, env: Env): Promise<Firebase
   const valid = await crypto.subtle.verify(
     "RSASSA-PKCS1-v1_5",
     publicKey,
-    decodeBase64Url(parts[2]),
+    toArrayBuffer(decodeBase64Url(parts[2])),
     encoder.encode(parts[0] + "." + parts[1]),
   );
   if (!valid) throw new ApiError(401, "invalid_token", "Podpis tokenu Firebase jest nieprawidłowy.");
@@ -173,7 +179,7 @@ async function getGoogleAccessToken(env: Env): Promise<string> {
   const signingInput = header + "." + payload;
   const privateKey = await crypto.subtle.importKey(
     "pkcs8",
-    pemToBytes(String(serviceAccount.private_key)),
+    toArrayBuffer(pemToBytes(String(serviceAccount.private_key))),
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"],
