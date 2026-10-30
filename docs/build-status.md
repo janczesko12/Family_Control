@@ -1,37 +1,16 @@
-# Status wdrożenia — 30.10.2026
+# Status repozytorium
 
-## Firebase
+## Konfiguracja
 
-- Projekt: `familycontrol-f4a9f` (`FamilyControl`).
-- Aplikacja telefonu: `com.familycontrol.app`.
-- Aplikacja TV: `pl.familycontrol.tv`.
-- Reguły Firestore i indeksy zostały wdrożone poprawnie.
-- Cloud Functions nie zostały wdrożone, ponieważ projekt wymaga planu Blaze do aktywacji Cloud Build i Artifact Registry. Kod Functions jest gotowy w `backend/functions/`.
+- Firebase project ID zapisany w .firebaserc: familycontrol-f4a9f.
+- Aplikacja TV: pl.familycontrol.tv.
+- Aplikacja rodzica Android: com.familycontrol.app.
+- Aplikacja rodzica i TV wymagają osobnych rejestracji w Firebase.
+- Cloud Functions muszą być wdrożone po aktywacji planu Blaze.
+- Aplikacja Flutter korzysta z mobile/lib/firebase_options.dart, generowanego lokalnie przez FlutterFire CLI.
 
-## APK
+## Ważne
 
-- `artifacts/FamilyControl-TV-debug.apk` — instalowalny APK dla TCL Android TV 11, package `pl.familycontrol.tv`.
-- `artifacts/FamilyControl-Android-release.apk` — APK telefonu, package `com.familycontrol.app`.
+Kod został poprawiony w repozytorium, ale kompilacja, testy integracyjne Firebase i test na fizycznym telewizorze nie są tutaj potwierdzone. Nie traktuj APK debug jako wydania produkcyjnego.
 
-Oba APK mają poprawny podpis instalacyjny. APK telefonu jest podpisany kluczem debugowym użytym przez domyślną konfigurację Fluttera; przed publikacją należy skonfigurować własny keystore release.
-
-SHA-256:
-
-```text
-FamilyControl-TV-debug.apk     65297D927F3990B1EDFDBF7754BAA101881FF686DE44D258A6B8D07D283BFF3A
-FamilyControl-Android-release.apk AA5B3657C32106F70EE8E1E49364ACCD9AEFB0382A57261D49028F217DB56C64
-```
-
-## Instalacja
-
-```powershell
-adb install -r .\artifacts\FamilyControl-TV-debug.apk
-adb install -r .\artifacts\FamilyControl-Android-release.apk
-```
-
-Przed pierwszym użyciem włącz w Firebase Authentication Email/Password i Anonymous. Cloud Functions trzeba wdrożyć po przełączeniu projektu na Blaze:
-
-```powershell
-firebase deploy --project familycontrol-f4a9f --only functions
-```
-
+Weryfikację wykonaj zgodnie z docs/firebase-setup.md i docs/testing.md. APK publikuj w GitHub Releases. Nie commituj lokalnych konfiguracji ani artefaktów builda.

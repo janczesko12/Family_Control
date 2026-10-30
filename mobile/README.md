@@ -1,17 +1,21 @@
-# family_control_app
+# Family Control — aplikacja rodzica
 
-A new Flutter project.
+Aplikacja Flutter do logowania rodzica, parowania telewizora przez QR i wysyłania poleceń blokady/czasu.
 
-## Getting Started
+## Konfiguracja
 
-This project is a starting point for a Flutter application.
+W katalogu mobile:
+~~~powershell
+flutter pub get
+dart pub global activate flutterfire_cli
+flutterfire configure --project=familycontrol-f4a9f --platforms=android,ios
+~~~
 
-A few resources to get you started if this is your first Flutter project:
+FlutterFire generuje lib/firebase_options.dart. Plik jest lokalną konfiguracją dla Firebase i nie jest dodawany do repozytorium.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Uruchom:
+~~~powershell
+flutter run
+~~~
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+iOS wymaga macOS/Xcode. Jeżeli katalog ios/ nie istnieje, wygeneruj platformę poleceniem flutter create --platforms=ios ., a następnie dodaj opis użycia kamery w ios/Runner/Info.plist.
