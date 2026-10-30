@@ -103,14 +103,13 @@ class _SignInPageState extends State<SignInPage> {
     setState(() => _busy = true);
     try {
       final auth = FirebaseAuth.instance;
-      UserCredential credential;
       if (_register) {
-        credential = await auth.createUserWithEmailAndPassword(
+        await auth.createUserWithEmailAndPassword(
           email: _email.text.trim(),
           password: _password.text,
         );
       } else {
-        credential = await auth.signInWithEmailAndPassword(
+        await auth.signInWithEmailAndPassword(
           email: _email.text.trim(),
           password: _password.text,
         );
@@ -257,32 +256,37 @@ class _FamilyDashboardState extends State<FamilyDashboard> {
   }
 
   Future<void> _registerPushNotifications() async {
-    final messaging = FirebaseMessaging.instance;
-    final settings = await messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-    if (settings.authorizationStatus == AuthorizationStatus.denied) return;
+    try {
+      final messaging = FirebaseMessaging.instance;
+      final settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      if (!mounted || settings.authorizationStatus == AuthorizationStatus.denied) return;
 
-    Future<void> saveToken(String token) async {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) return;
-      await FirebaseFirestore.instance
-          .collection('users').doc(uid)
-          .collection('notificationTokens').doc(token)
-          .set({
-        'token': token,
-        'platform': Theme.of(context).platform.name,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      Future<void> saveToken(String token) async {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid == null) return;
+        await FirebaseFirestore.instance
+            .collection('users').doc(uid)
+            .collection('notificationTokens').doc(token)
+            .set({
+          'token': token,
+          'platform': defaultTargetPlatform.name,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      final token = await messaging.getToken();
+      if (token != null && mounted) await saveToken(token);
+      _tokenSubscription = messaging.onTokenRefresh.listen((newToken) {
+        saveToken(newToken);
+      });
+    } catch (error) {
+      // Push notifications are optional; the TV controls still work if FCM is unavailable.
+      debugPrint('FCM token registration failed: $error');
     }
-
-    final token = await messaging.getToken();
-    if (token != null) await saveToken(token);
-    _tokenSubscription = messaging.onTokenRefresh.listen((newToken) {
-      saveToken(newToken);
-    });
   }
 
   @override
