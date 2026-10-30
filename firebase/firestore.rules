@@ -1,34 +1,123 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function userFamily(familyId) {
-      return signedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId;
+    function signedIn() {
+      return request.auth != null;
     }
+
+    function userExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function isParentUid(familyId, uid) {
+      return signedIn()
+        && userExists(uid)
+        && get(/databases/$(database)/documents/users/$(uid)).data.familyId == familyId
+        && get(/databases/$(database)/documents/users/$(uid)).data.role == 'parent';
+    }
+
     function isParent(familyId) {
-      return userFamily(familyId)
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'parent';
+      return isParentUid(familyId, request.auth.uid);
     }
-    function isTv(familyId, deviceId) {
+
+    function devicePath(familyId, deviceId) {
+      return /databases/$(database)/documents/families/$(familyId)/devices/$(deviceId);
+    }
+
+    function ownsTv(familyId, deviceId) {
       return signedIn()
-        && get(/databases/$(database)/documents/families/$(familyId)/devices/$(deviceId)).data.tvUid == request.auth.uid;
+        && exists(devicePath(familyId, deviceId))
+        && get(devicePath(familyId, deviceId)).data.tvUid == request.auth.uid;
     }
-    function validCommand() {
-      return request.resource.data.keys().hasAll(['type', 'createdBy', 'createdAt', 'status', 'payload'])
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.status == 'pending'
-        && request.resource.data.type in ['lock', 'unlock', 'add_time', 'set_limit', 'reset_day', 'set_pin', 'set_weekly_limits']
-        && request.resource.data.payload is map;
+
+    function isTv(familyId, deviceId) {
+      return ownsTv(familyId, deviceId)
+        && !('revokedAt' in get(devicePath(familyId, deviceId)).data);
+    }
+
+    function validParentCommand(familyId, deviceId, commandId) {
+      let path = /databases/$(database)/documents/families/$(familyId)/devices/$(deviceId)/commands/$(commandId);
+      let before = get(path).data;
+      let after = getAfter(path).data;
+      return commandId is string
+        && exists(path)
+        && before.status == 'pending'
+        && after.status == 'acknowledged'
+        && before.commandId == commandId
+        && isParentUid(familyId, before.createdBy);
+    }
+
+    function validTickUpdate() {
+      return request.resource.data.remainingSeconds is int
+        && request.resource.data.usedSecondsToday is int
+        && request.resource.data.remainingSeconds >= 0
+        && request.resource.data.usedSecondsToday >= resource.data.usedSecondsToday
+        && request.resource.data.remainingSeconds <= resource.data.remainingSeconds
+        && request.resource.data.get('lastAppliedCommandId', '') == resource.data.get('lastAppliedCommandId', '')
+        && (
+          request.resource.data.sessionEndServerMillis == resource.data.sessionEndServerMillis
+          || (
+            request.resource.data.sessionEndServerMillis == 0
+            && request.resource.data.remainingSeconds == 0
+          )
+        )
+        && (
+          request.resource.data.isLocked == resource.data.isLocked
+          || (
+            request.resource.data.isLocked == true
+            && request.resource.data.remainingSeconds == 0
+          )
+        );
+    }
+
+    function validPinUnlock() {
+      return request.resource.data.isLocked == false
+        && request.resource.data.lockReason == 'pin'
+        && request.resource.data.remainingSeconds == resource.data.remainingSeconds
+        && request.resource.data.sessionEndServerMillis == resource.data.sessionEndServerMillis
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isLocked', 'lastSyncAt', 'lastSeenAt', 'lockReason'
+        ]);
+    }
+
+    function validCommandCreate(commandId) {
+      let data = request.resource.data;
+      let payload = data.payload;
+      return data.keys().hasAll(['commandId', 'type', 'createdBy', 'createdAt', 'status', 'payload'])
+        && data.commandId == commandId
+        && data.createdBy == request.auth.uid
+        && data.createdAt == request.time
+        && data.status == 'pending'
+        && payload is map
+        && data.type in ['lock', 'unlock', 'add_time', 'set_limit', 'reset_day', 'set_pin']
+        && (
+          data.type in ['lock', 'unlock', 'reset_day']
+          || (
+            data.type in ['add_time', 'set_limit']
+            && payload.seconds is int
+            && payload.seconds >= 0
+            && payload.seconds <= 86400
+            && (data.type != 'add_time' || payload.seconds > 0)
+          )
+          || (
+            data.type == 'set_pin'
+            && payload.salt is string
+            && payload.verifier is string
+          )
+        );
     }
 
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
-      allow create: if signedIn() && request.auth.uid == uid;
-      allow update: if signedIn() && request.auth.uid == uid
+      // Profil i rola rodzica są tworzone wyłącznie przez zaufaną Cloud Function.
+      allow create, delete: if false;
+      allow update: if signedIn()
+        && request.auth.uid == uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName']);
+
       match /notificationTokens/{tokenId} {
-        allow create, update: if signedIn() && request.auth.uid == uid
+        allow create, update: if signedIn()
+          && request.auth.uid == uid
           && request.resource.data.token == tokenId;
         allow delete: if signedIn() && request.auth.uid == uid;
         allow read: if false;
@@ -37,50 +126,58 @@ service cloud.firestore {
 
     match /families/{familyId} {
       allow read: if isParent(familyId);
-      allow create: if signedIn() && request.resource.data.parentIds.hasAny([request.auth.uid]);
+      allow create, delete: if false;
       allow update: if isParent(familyId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']);
 
       match /devices/{deviceId} {
-        allow read: if isParent(familyId) || isTv(familyId, deviceId);
-        allow create: if isParent(familyId)
-          && request.resource.data.tvUid is string
-          && request.resource.data.isLocked == true;
-        // Parents can change presentation metadata only. State changes come from TV or Functions.
-        allow update: if isParent(familyId)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']);
-        allow update: if isTv(familyId, deviceId)
+        allow read: if isParent(familyId) || ownsTv(familyId, deviceId);
+        allow create: if false;
+        allow delete: if isParent(familyId);
+        allow update: if (
+          isParent(familyId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+        ) || (
+          isTv(familyId, deviceId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'isLocked', 'remainingSeconds', 'usedSecondsToday', 'lastSyncAt', 'lastSeenAt',
-            'lockReason', 'lastAppliedCommandId', 'clockTrusted', 'sessionStartServerMillis',
-            'sessionEndServerMillis', 'updatedAt'
+            'lockReason', 'lastAppliedCommandId', 'clockTrusted', 'sessionEndServerMillis',
+            'updatedAt', 'dailyLimitSeconds'
           ])
+          && request.resource.data.remainingSeconds is int
           && request.resource.data.remainingSeconds >= 0
-          && request.resource.data.usedSecondsToday >= 0;
+          && request.resource.data.usedSecondsToday is int
+          && request.resource.data.usedSecondsToday >= 0
+          && (
+            validParentCommand(familyId, deviceId, request.resource.data.lastAppliedCommandId)
+            || validTickUpdate()
+            || validPinUnlock()
+          )
+        );
 
         match /commands/{commandId} {
-          allow read: if isParent(familyId) || isTv(familyId, deviceId);
-          allow create: if isParent(familyId) && validCommand()
-            && commandId == request.resource.data.commandId;
+          allow read: if isParent(familyId) || ownsTv(familyId, deviceId);
+          allow create: if isParent(familyId) && validCommandCreate(commandId);
           allow update: if isTv(familyId, deviceId)
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'acknowledged'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'status', 'appliedAt', 'error', 'deviceResult'
-            ])
-            && resource.data.status == 'pending'
-            && request.resource.data.status in ['acknowledged', 'failed'];
+            ]);
+          allow delete: if false;
         }
 
         match /history/{eventId} {
-          allow read: if isParent(familyId) || isTv(familyId, deviceId);
+          allow read: if isParent(familyId) || ownsTv(familyId, deviceId);
           allow create: if isTv(familyId, deviceId)
             && request.resource.data.actorUid == request.auth.uid;
+          allow update, delete: if false;
         }
       }
     }
 
     match /pairingSessions/{sessionId} {
       allow read: if signedIn() && resource.data.tvUid == request.auth.uid;
-      // Creation and claiming are callable Functions with Admin SDK.
       allow write: if false;
     }
   }

@@ -1,17 +1,65 @@
-# Plan testów akceptacyjnych
+# Plan testów Family Control
 
-- ręczna blokada z telefonu: `pending -> acknowledged`, ekran TV zablokowany;
-- ręczne odblokowanie z telefonu bez PIN-u TV;
-- PIN `6744` offline i po restarcie aplikacji;
-- niepoprawny PIN, pięć prób i blokada czasowa;
-- automatyczne wyczerpanie limitu oraz zapis historii;
-- restart TV w trakcie sesji;
-- brak Internetu, lokalne odliczanie wcześniej zatwierdzonego czasu i synchronizacja po powrocie;
-- dwa telefony wysyłające komendy jednocześnie;
-- powtórne dostarczenie tego samego `commandId`;
-- zmiana limitu i korekta sesji;
-- wygasły kod parowania i ponowne parowanie;
-- próba klienta TV zwiększenia czasu bez polecenia rodzica — powinna zostać odrzucona przez reguły;
-- sprawdzenie `Device Owner` / Lock Task na konkretnym modelu TCL;
-- próba HOME na urządzeniu bez Device Owner — komunikat ograniczenia musi pozostać prawdziwy.
+## Firebase i konto rodzica
 
+- Rejestracja Email/Password.
+- Logowanie istniejącego rodzica.
+- ensureFamily tworzy rodzinę tylko raz.
+- Zalogowany użytkownik nie może sam utworzyć/zmienić role ani familyId.
+- Drugi użytkownik nie odczytuje dokumentów innej rodziny.
+
+## Parowanie
+
+- TV loguje się anonimowo i generuje kod.
+- Rodzic skanuje QR.
+- Prawidłowy kod tworzy pojedynczy dokument urządzenia i oznacza sesję jako claimed.
+- Błędny kod zwiększa licznik prób.
+- Po pięciu błędnych próbach sesja jest odrzucana.
+- Wygasła lub ponownie użyta sesja nie może być przejęta.
+- TV otrzymuje familyId i deviceId po zatwierdzeniu.
+
+## Sterowanie i limity
+
+- Rodzic zleca lock/unlock.
+- Rodzic ustawia limit 1 minuty i obserwuje odliczanie.
+- Rodzic dodaje czas w trakcie sesji.
+- Polecenie ma commandId i jest rozliczone najwyżej raz.
+- Zmiana remainingSeconds na większą wartość bez zatwierdzonego polecenia zostaje odrzucona.
+- Timer odtwarza stan na podstawie sessionEndServerMillis po ponownym uruchomieniu aplikacji.
+- Wyłączenie internetu w trakcie sesji nie resetuje zapisanej daty końca; po powrocie sieci TV synchronizuje status.
+
+## PIN
+
+- PIN domyślny 6744 odblokowuje lokalny ekran TV.
+- Nieprawidłowy PIN jest odrzucany.
+- Pięć błędów powoduje blokadę prób na 60 sekund.
+- PIN działa lokalnie bez telefonu i sieci.
+
+## TCL / kiosk
+
+- Zainstaluj APK na dokładnym modelu TCL i sprawdź zachowanie pilota.
+- Sprawdź przycisk BACK.
+- Sprawdź HOME przed i po konfiguracji Device Owner.
+- Potwierdź, że dpm set-device-owner jest wspierane przez firmware.
+- Bez Device Owner testuj tylko ekran blokady aplikacji, nie deklaruj blokady całego systemu.
+
+## Weryfikacja techniczna przed użyciem
+
+~~~powershell
+cd backend/functions
+npm ci
+npm run build
+
+cd ..\..
+firebase deploy --project familycontrol-f4a9f --only firestore:rules,firestore:indexes,functions
+
+cd mobile
+flutter pub get
+flutter analyze
+flutter test
+
+cd ..\tv
+.\gradlew.bat assembleDebug
+~~~
+
+Wykonaj również testy Firestore Rules w Emulator Suite. Nie publikuj do produkcji, dopóki testy nie przejdą.

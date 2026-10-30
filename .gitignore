@@ -1,23 +1,27 @@
+# Flutter generated files
 **/.dart_tool/
 **/.flutter-plugins
 **/.flutter-plugins-dependencies
 **/build/
+**/coverage/
+
+# Gradle / Android local state
+**/.gradle/
+**/local.properties
+**/hs_err_pid*.log
+
+# Node generated files
 **/node_modules/
-**/lib/
+backend/functions/lib/
+
+# Local Firebase configuration
 **/google-services.json
 **/GoogleService-Info.plist
 **/firebase_options.dart
+.env
 *.jks
 *.keystore
-.env
 
-# Flutter SDK archives and local tooling
+# Local SDK archives and generated packages
 .tooling/
-
-# Generated APK files
 artifacts/*.apk
-
-# Build outputs
-build/
-.dart_tool/
-.gradle/

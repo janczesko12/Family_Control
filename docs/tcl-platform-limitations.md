@@ -1,38 +1,32 @@
-# TCL: zgodność i ograniczenia
+# TCL — zgodność i ograniczenia
 
-## Co trzeba sprawdzić przed instalacją
+## Sprawdź model przed instalacją
 
-1. Model i region telewizora.
-2. System w `Ustawienia → System → Informacje`.
-3. Czy istnieje Google Play i czy można włączyć debugowanie ADB.
-4. Czy firmware pozwala na provisioning dedykowanego urządzenia / Device Owner.
+W telewizorze otwórz Ustawienia → System → Informacje i zanotuj pełny model, wersję Android TV / Google TV, wersję firmware i region.
 
-## Obsługiwane założenie
+TCL sprzedaje telewizory z różnymi systemami. APK Kotlin działa tylko na urządzeniach zgodnych z Android TV/Google TV. Nie jest aplikacją dla Roku TV.
 
-Moduł `tv/` jest kierowany do Android TV / Google TV z możliwością instalacji APK. Google TV jest interfejsem na Android TV; nadal trzeba zweryfikować konkretny firmware TCL.
-
-## Roku TV i inne systemy
-
-Na TCL Roku TV aplikacja Kotlin APK nie jest instalowalna. Ten moduł nie próbuje sterować Roku przez prywatne API ani przez exploity. Dla Roku trzeba przygotować osobny, oficjalnie wspierany kanał integracji albo zastosować kontrolę na poziomie routera / konta, jeśli jest dostępna w danym regionie.
-
-## Rzeczywista blokada
+## Blokada aplikacji a blokada systemu
 
 Bez Device Owner aplikacja może:
+- pokazać pełnoekranowy ekran blokady,
+- przechwycić BACK we własnej aktywności,
+- wrócić do własnego ekranu po ponownym uruchomieniu aplikacji.
 
-- wyświetlić ekran blokady w pełnym oknie,
-- przechwycić BACK w obrębie własnej aktywności,
-- wznowić się przy ponownym uruchomieniu aplikacji,
-- blokować pilotowe przyciski nawigacyjne tylko we własnym UI.
+Bez Device Owner nie może zagwarantować blokady HOME, ustawień, zmiany wejścia ani uruchamiania innych aplikacji.
 
-Bez Device Owner nie może zagwarantować, że użytkownik nie naciśnie HOME, przełączy wejścia lub uruchomi inną aplikację. To jest ograniczenie Androida, nie błąd tego projektu.
+KioskController sprawdza, czy aplikacja jest Device Owner, konfiguruje setLockTaskPackages() i dopiero wtedy uruchamia Lock Task. Przy odblokowaniu wywołuje stopLockTask().
 
-Tryb kiosk jest aktywowany tylko, gdy system potwierdzi `isLockTaskPermitted`. Provisioning Device Owner jest operacją administracyjną i może wyczyścić urządzenie; wykonuj ją wyłącznie na dedykowanym, testowym telewizorze zgodnie z polityką producenta.
+## Provisioning Device Owner
 
-Po instalacji na wyzerowanym urządzeniu testowym można sprawdzić provisioning ADB poleceniem (wymaga Android SDK/ADB i braku istniejącego administratora):
+To operacja administracyjna na dedykowanym urządzeniu. Może wymagać factory resetu i wykonania konfiguracji przed dodaniem kont użytkowników. Na testowym urządzeniu po instalacji APK i włączeniu ADB spróbuj:
 
-```text
+~~~powershell
 adb shell dpm set-device-owner pl.familycontrol.tv/.FamilyDeviceAdminReceiver
-```
+~~~
 
-Jeśli firmware TCL odrzuci polecenie, pełny kiosk nie jest dostępny na tym modelu. Nie obchodź tego roota ani exploitami.
+Nie wszystkie modele i wersje firmware TCL pozwalają na takie provisioning. Jeżeli polecenie zostanie odrzucone, pełny kiosk nie jest dostępny tą metodą na danym telewizorze. Nie używaj roota ani exploitów.
 
+## Ważne
+
+Nie deklaruj pełnej blokady telewizora na podstawie samego ekranu Compose. Weryfikuj HOME, BACK, ustawienia i przełączanie wejść fizycznym pilotem na konkretnym modelu.

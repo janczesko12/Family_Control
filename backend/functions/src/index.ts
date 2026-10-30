@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { randomInt, createHash } from 'node:crypto';
 import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
@@ -8,159 +8,233 @@ import { getMessaging } from 'firebase-admin/messaging';
 
 initializeApp();
 const db = getFirestore();
+const PAIRING_TTL_MS = 5 * 60 * 1000;
+const MAX_PAIRING_ATTEMPTS = 5;
 
-function requireParent(request: { auth?: { uid: string } | null }): string {
-  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Zaloguj się jako rodzic.');
+function requireUid(request: { auth?: { uid: string } | null }): string {
+  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Zaloguj się.');
   return request.auth.uid;
 }
 
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new HttpsError('invalid-argument', 'Nieprawidłowe pole: ' + field + '.');
+  }
+  return value.trim();
+}
+
+/** Tworzy profil rodzica i rodzinę atomowo; klient nie może sam nadać sobie roli. */
 export const ensureFamily = onCall(async (request) => {
-  const uid = requireParent(request);
-  const userRef = db.doc(`users/${uid}`);
-  const existing = await userRef.get();
-  if (existing.exists && existing.get('familyId')) return { familyId: existing.get('familyId') };
+  const uid = requireUid(request);
+  const provider = request.auth?.token.firebase?.sign_in_provider;
+  if (provider === 'anonymous') {
+    throw new HttpsError('permission-denied', 'Konto anonimowe TV nie może tworzyć rodziny rodzica.');
+  }
+  const userRef = db.doc('users/' + uid);
 
-  const familyRef = db.collection('families').doc();
-  const batch = db.batch();
-  batch.set(familyRef, {
-    name: 'Moja rodzina',
-    parentIds: [uid],
-    createdAt: FieldValue.serverTimestamp(),
+  return db.runTransaction(async (tx) => {
+    const user = await tx.get(userRef);
+    if (user.exists) {
+      if (user.get('role') !== 'parent') {
+        throw new HttpsError('permission-denied', 'To konto nie ma roli rodzica.');
+      }
+      const familyId = user.get('familyId');
+      if (typeof familyId === 'string' && familyId.length > 0) return { familyId };
+    }
+
+    const familyRef = db.collection('families').doc();
+    tx.create(familyRef, {
+      name: 'Moja rodzina',
+      parentIds: [uid],
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(userRef, {
+      familyId: familyRef.id,
+      role: 'parent',
+      displayName: request.auth?.token.name ?? '',
+      createdAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { familyId: familyRef.id };
   });
-  batch.set(userRef, {
-    familyId: familyRef.id,
-    role: 'parent',
-    displayName: request.auth?.token.name ?? '',
-    createdAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
-  await batch.commit();
-  return { familyId: familyRef.id };
 });
 
-export const createPairingSession = onCall(async (request) => {
-  const uid = requireParent(request);
-  const user = await db.doc(`users/${uid}`).get();
-  if (!user.exists || user.get('role') !== 'parent') throw new HttpsError('permission-denied', 'Brak uprawnień rodzica.');
-  const code = String(Math.floor(100000 + Math.random() * 900000));
-  const sessionId = db.collection('pairingSessions').doc().id;
-  const codeHash = createHash('sha256').update(code).digest('hex');
-  await db.doc(`pairingSessions/${sessionId}`).set({
-    familyId: user.get('familyId'),
-    createdBy: uid,
-    codeHash,
-    status: 'pending',
-    expiresAt: Timestamp.fromMillis(Date.now() + 5 * 60 * 1000),
-    createdAt: FieldValue.serverTimestamp(),
-  });
-  return { sessionId, code, expiresAt: Date.now() + 5 * 60 * 1000 };
-});
-
+/** Wywoływane przez TV zalogowany anonimowo. Kod parowania jest haszowany w bazie. */
 export const createTvPairingSession = onCall(async (request) => {
   const tvUid = request.auth?.uid;
-  if (!tvUid) throw new HttpsError('unauthenticated', 'TV musi być zalogowany anonimowo.');
-  const code = String(Math.floor(100000 + Math.random() * 900000));
-  const sessionId = db.collection('pairingSessions').doc().id;
+  if (!tvUid) throw new HttpsError('unauthenticated', 'Telewizor musi być zalogowany anonimowo.');
+
+  const code = String(randomInt(100000, 1000000));
+  const sessionRef = db.collection('pairingSessions').doc();
   const codeHash = createHash('sha256').update(code).digest('hex');
-  await db.doc(`pairingSessions/${sessionId}`).set({
+  const expiresAt = Date.now() + PAIRING_TTL_MS;
+
+  await sessionRef.create({
     tvUid,
     codeHash,
+    failedAttempts: 0,
     status: 'pending',
-    expiresAt: Timestamp.fromMillis(Date.now() + 5 * 60 * 1000),
+    expiresAt: Timestamp.fromMillis(expiresAt),
     createdAt: FieldValue.serverTimestamp(),
   });
-  return { sessionId, code, tvUid, expiresAt: Date.now() + 5 * 60 * 1000 };
+
+  return { sessionId: sessionRef.id, code, tvUid, expiresAt };
 });
 
+/**
+ * Rodzic przejmuje sesję TV. familyId pochodzi wyłącznie z users/{uid},
+ * a claim oraz utworzenie urządzenia są jedną transakcją.
+ */
 export const claimPairingSession = onCall(async (request) => {
-  const uid = requireParent(request);
-  const { sessionId, code, deviceName, tvUid } = request.data as Record<string, unknown>;
-  if (typeof sessionId !== 'string' || typeof code !== 'string' || typeof tvUid !== 'string') {
-    throw new HttpsError('invalid-argument', 'Niepełne dane parowania.');
-  }
-  const sessionRef = db.doc(`pairingSessions/${sessionId}`);
-  const session = await sessionRef.get();
-  const data = session.data();
-  if (!session.exists || !data || data.status !== 'pending' || data.expiresAt.toMillis() < Date.now()) {
-    throw new HttpsError('deadline-exceeded', 'Sesja parowania wygasła.');
-  }
-  if (createHash('sha256').update(code).digest('hex') !== data.codeHash) {
-    throw new HttpsError('permission-denied', 'Niepoprawny kod parowania.');
-  }
-  if (data.tvUid !== tvUid) throw new HttpsError('permission-denied', 'Sesja nie należy do tego TV.');
-  const user = await db.doc(`users/${uid}`).get();
-  if (user.get('familyId') !== data.familyId) throw new HttpsError('permission-denied', 'Nieprawidłowa rodzina.');
+  const uid = requireUid(request);
+  const sessionId = requireString(request.data?.sessionId, 'sessionId');
+  const code = requireString(request.data?.code, 'code');
+  const tvUid = requireString(request.data?.tvUid, 'tvUid');
+  const nameRaw = typeof request.data?.deviceName === 'string' ? request.data.deviceName.trim() : '';
+  const deviceName = (nameRaw || 'Telewizor TCL').slice(0, 60);
 
-  const deviceRef = db.collection(`families/${data.familyId}/devices`).doc();
-  const batch = db.batch();
-  batch.set(deviceRef, {
-    name: typeof deviceName === 'string' && deviceName.trim() ? deviceName.trim() : 'Telewizor TCL',
-    platform: 'android_tv',
-    tvUid,
-    isLocked: true,
-    remainingSeconds: 0,
-    dailyLimitSeconds: 7200,
-    usedSecondsToday: 0,
-    clockTrusted: true,
-    createdAt: FieldValue.serverTimestamp(),
-    lastSeenAt: FieldValue.serverTimestamp(),
+  if (!/^\d{6}$/.test(code)) {
+    throw new HttpsError('invalid-argument', 'Kod parowania musi mieć 6 cyfr.');
+  }
+
+  const userRef = db.doc('users/' + uid);
+  const sessionRef = db.doc('pairingSessions/' + sessionId);
+  const deviceId = db.collection('families').doc().id;
+
+  const result = await db.runTransaction(async (tx) => {
+    const user = await tx.get(userRef);
+    const session = await tx.get(sessionRef);
+
+    if (!user.exists || user.get('role') !== 'parent' || typeof user.get('familyId') !== 'string') {
+      return { error: 'parent-profile' as const };
+    }
+    if (!session.exists || session.get('status') !== 'pending') return { error: 'session' as const };
+
+    const expiresAt = session.get('expiresAt') as Timestamp | undefined;
+    if (!expiresAt || expiresAt.toMillis() <= Date.now()) return { error: 'expired' as const };
+    if (session.get('tvUid') !== tvUid) return { error: 'tv-mismatch' as const };
+
+    const failedAttempts = Number(session.get('failedAttempts') ?? 0);
+    if (failedAttempts >= MAX_PAIRING_ATTEMPTS) return { error: 'locked' as const };
+
+    const submittedHash = createHash('sha256').update(code).digest('hex');
+    if (submittedHash !== session.get('codeHash')) {
+      tx.update(sessionRef, { failedAttempts: failedAttempts + 1 });
+      return { error: 'code' as const };
+    }
+
+    const familyId = user.get('familyId') as string;
+    const deviceRef = db.doc('families/' + familyId + '/devices/' + deviceId);
+    tx.create(deviceRef, {
+      name: deviceName,
+      platform: 'android_tv',
+      tvUid,
+      isLocked: true,
+      remainingSeconds: 0,
+      sessionEndServerMillis: 0,
+      dailyLimitSeconds: 7200,
+      usedSecondsToday: 0,
+      lockReason: 'initial',
+      createdAt: FieldValue.serverTimestamp(),
+      lastSeenAt: FieldValue.serverTimestamp(),
+      lastSyncAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(sessionRef, {
+      status: 'claimed',
+      familyId,
+      deviceId,
+      claimedBy: uid,
+      claimedAt: FieldValue.serverTimestamp(),
+    });
+    return { familyId, deviceId };
   });
-  batch.update(sessionRef, {
-    status: 'claimed',
-    claimedBy: uid,
-    deviceId: deviceRef.id,
-    claimedAt: FieldValue.serverTimestamp(),
-  });
-  await batch.commit();
-  return { familyId: data.familyId, deviceId: deviceRef.id };
+
+  if ('error' in result) {
+    switch (result.error) {
+      case 'parent-profile':
+        throw new HttpsError('permission-denied', 'Brak profilu rodzica. Zaloguj się ponownie.');
+      case 'expired':
+        throw new HttpsError('deadline-exceeded', 'Kod parowania wygasł.');
+      case 'locked':
+        throw new HttpsError('resource-exhausted', 'Zbyt wiele błędnych prób. Wygeneruj nowy kod na TV.');
+      case 'code':
+        throw new HttpsError('permission-denied', 'Niepoprawny kod parowania.');
+      case 'tv-mismatch':
+        throw new HttpsError('permission-denied', 'Kod nie należy do tego telewizora.');
+      default:
+        throw new HttpsError('not-found', 'Sesja parowania nie istnieje lub została już użyta.');
+    }
+  }
+  return result;
 });
 
 export const auditCommand = onDocumentCreated(
   'families/{familyId}/devices/{deviceId}/commands/{commandId}',
   async (event) => {
     const snap = event.data;
-    if (!snap) return;
-    const command = snap.data();
-    if (command.status !== 'pending') return;
-    await db.doc(`families/${event.params.familyId}/devices/${event.params.deviceId}`).update({
-      lastCommandAt: FieldValue.serverTimestamp(),
-    });
+    if (!snap || snap.get('status') !== 'pending') return;
+    await db.doc('families/' + event.params.familyId + '/devices/' + event.params.deviceId)
+      .update({ lastCommandAt: FieldValue.serverTimestamp() });
   },
 );
 
+/** Powiadomienia tylko po zmianie blokady, nie przy każdym heartbeat TV. */
 export const notifyParents = onDocumentUpdated(
   'families/{familyId}/devices/{deviceId}',
   async (event) => {
     const before = event.data?.before.data();
     const after = event.data?.after.data();
-    if (!before || !after) return;
-    const lockChanged = before.isLocked !== after.isLocked;
-    const connectionChanged = Boolean(before.lastSeenAt) !== Boolean(after.lastSeenAt);
-    if (!lockChanged && !connectionChanged) return;
-    const family = await db.doc(`families/${event.params.familyId}`).get();
+    if (!before || !after || before.isLocked === after.isLocked) return;
+
+    const family = await db.doc('families/' + event.params.familyId).get();
     const parentIds = (family.get('parentIds') as string[] | undefined) ?? [];
     const tokens: string[] = [];
-    for (const uid of parentIds) {
-      const tokenDocs = await db.collection(`users/${uid}/notificationTokens`).get();
+    for (const parentId of parentIds) {
+      const tokenDocs = await db.collection('users/' + parentId + '/notificationTokens').get();
       tokenDocs.forEach((doc) => tokens.push(doc.id));
     }
-    if (tokens.length === 0) return;
-    const title = after.isLocked ? 'Telewizor zablokowany' : 'Telewizor odblokowany';
-    const body = after.lockReason === 'time_exhausted' ? 'Dzienny limit czasu został wykorzystany.' : 'Stan telewizora został zmieniony.';
-    await getMessaging().sendEachForMulticast({ tokens: tokens.slice(0, 500), notification: { title, body }, data: { deviceId: event.params.deviceId, isLocked: String(after.isLocked) } });
+    if (!tokens.length) return;
+
+    const locked = after.isLocked === true;
+    await getMessaging().sendEachForMulticast({
+      tokens: tokens.slice(0, 500),
+      notification: {
+        title: locked ? 'Telewizor zablokowany' : 'Telewizor odblokowany',
+        body: after.lockReason === 'time_exhausted'
+          ? 'Limit czasu został wykorzystany.'
+          : 'Stan telewizora został zmieniony.',
+      },
+      data: { deviceId: event.params.deviceId, isLocked: String(locked) },
+    });
   },
 );
 
 export const revokeAnonymousTv = onCall(async (request) => {
-  const uid = requireParent(request);
-  const { familyId, deviceId } = request.data as Record<string, unknown>;
-  const user = await db.doc(`users/${uid}`).get();
-  if (!user.exists || user.get('familyId') !== familyId || user.get('role') !== 'parent') {
-    throw new HttpsError('permission-denied', 'Brak uprawnień.');
+  const uid = requireUid(request);
+  const familyId = requireString(request.data?.familyId, 'familyId');
+  const deviceId = requireString(request.data?.deviceId, 'deviceId');
+  const user = await db.doc('users/' + uid).get();
+
+  if (!user.exists || user.get('role') !== 'parent' || user.get('familyId') !== familyId) {
+    throw new HttpsError('permission-denied', 'Brak uprawnień do tej rodziny.');
   }
-  const device = await db.doc(`families/${familyId}/devices/${deviceId}`).get();
+
+  const deviceRef = db.doc('families/' + familyId + '/devices/' + deviceId);
+  const device = await deviceRef.get();
+  if (!device.exists) throw new HttpsError('not-found', 'Nie znaleziono urządzenia.');
   const tvUid = device.get('tvUid');
-  if (typeof tvUid === 'string') await getAuth().revokeRefreshTokens(tvUid);
-  await db.doc(`families/${familyId}/devices/${deviceId}`).update({ revokedAt: FieldValue.serverTimestamp() });
+
+  await deviceRef.update({
+    revokedAt: FieldValue.serverTimestamp(),
+    isLocked: true,
+    lockReason: 'revoked',
+  });
+  if (typeof tvUid === 'string') {
+    try {
+      await getAuth().revokeRefreshTokens(tvUid);
+    } catch {
+      // revokedAt w Firestore pozostaje źródłem prawdy, nawet jeśli konto Auth nie istnieje.
+    }
+  }
   return { ok: true };
 });
-
